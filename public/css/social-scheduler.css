@@ -1,0 +1,213 @@
+:root {
+    --bg: #f5f7fb;
+    --surface: #ffffff;
+    --text: #172033;
+    --muted: #6b7280;
+    --line: #e5e7eb;
+    --primary: #2656d9;
+}
+
+body {
+    background: var(--bg);
+    color: var(--text);
+}
+
+.app-shell {
+    display: grid;
+    grid-template-columns: 260px minmax(0, 1fr);
+    min-height: 100vh;
+}
+
+.sidebar {
+    background: #111827;
+    padding: 24px 18px;
+}
+
+.brand {
+    align-items: center;
+    color: #fff;
+    display: flex;
+    font-weight: 700;
+    gap: 10px;
+    margin-bottom: 28px;
+    text-decoration: none;
+}
+
+.brand-mark {
+    align-items: center;
+    background: var(--primary);
+    border-radius: 8px;
+    display: inline-flex;
+    height: 36px;
+    justify-content: center;
+    width: 36px;
+}
+
+.sidebar .nav-link {
+    border-radius: 8px;
+    color: #cbd5e1;
+    padding: 10px 12px;
+}
+
+.sidebar .nav-link:hover {
+    background: #1f2937;
+    color: #fff;
+}
+
+.main {
+    padding: 28px;
+}
+
+.topbar {
+    align-items: center;
+    display: flex;
+    justify-content: space-between;
+    margin-bottom: 24px;
+}
+
+.topbar h1 {
+    font-size: 28px;
+    margin: 0;
+}
+
+.topbar p {
+    color: var(--muted);
+    margin: 4px 0 0;
+}
+
+.panel,
+.metric {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    box-shadow: 0 12px 24px rgba(15, 23, 42, 0.04);
+    padding: 18px;
+}
+
+.panel-header {
+    align-items: center;
+    display: flex;
+    justify-content: space-between;
+    margin-bottom: 14px;
+}
+
+.panel-header h2,
+.settings-tile h2 {
+    font-size: 17px;
+    margin: 0;
+}
+
+.metric-grid,
+.provider-grid {
+    display: grid;
+    gap: 14px;
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+}
+
+.metric span,
+.provider-card small,
+.side-item p,
+.settings-tile p,
+.page-card p {
+    color: var(--muted);
+}
+
+.metric strong {
+    display: block;
+    font-size: 30px;
+}
+
+.platform-dot {
+    border-radius: 999px;
+    display: inline-block;
+    height: 10px;
+    margin-right: 8px;
+    width: 10px;
+}
+
+.platform-facebook { background: #1877f2; }
+.platform-instagram { background: #833ab4; }
+.platform-linkedin { background: #0a66c2; }
+.platform-tiktok { background: #111111; }
+.platform-twitter { background: #1f2937; }
+.platform-pinterest { background: #e60023; }
+.platform-youtube { background: #ff0000; }
+.platform-threads { background: #000000; }
+
+.provider-card,
+.page-card,
+.side-item {
+    align-items: center;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    display: flex;
+    gap: 12px;
+    padding: 14px;
+}
+
+.page-card img {
+    border-radius: 8px;
+    height: 44px;
+    object-fit: cover;
+    width: 44px;
+}
+
+.calendar-toolbar {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 14px;
+    max-width: 480px;
+}
+
+.composer-text {
+    min-height: 280px;
+}
+
+.composer-tools {
+    display: flex;
+    gap: 8px;
+    margin-top: 10px;
+}
+
+.settings-tile i {
+    color: var(--primary);
+    font-size: 26px;
+}
+
+@media (max-width: 900px) {
+    .app-shell {
+        grid-template-columns: 1fr;
+    }
+
+    .sidebar {
+        position: static;
+    }
+
+    .topbar {
+        align-items: flex-start;
+        gap: 12px;
+        flex-direction: column;
+    }
+}
+
+.login-body {
+    align-items: center;
+    background: var(--bg);
+    display: flex;
+    min-height: 100vh;
+    justify-content: center;
+    padding: 24px;
+}
+
+.login-panel {
+    background: #fff;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    max-width: 420px;
+    padding: 28px;
+    width: 100%;
+}
+
+.login-panel h1 {
+    font-size: 28px;
+}
