@@ -6,7 +6,7 @@
 @section('content')
 <div class="panel">
     <div class="table-responsive">
-        <table class="table align-middle">
+        <table class="table app-table align-middle">
             <thead><tr><th>Time</th><th>Platform</th><th>Endpoint</th><th>Status</th><th>Duration</th><th>Result</th></tr></thead>
             <tbody>
             @foreach($logs as $log)

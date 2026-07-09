@@ -3,7 +3,7 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Sign in · {{ config('app.name', 'Social Scheduler') }}</title>
+    <title>Sign in - {{ config('app.name', 'Social Scheduler') }}</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="{{ asset('css/social-scheduler.css') }}" rel="stylesheet">
 </head>
@@ -11,7 +11,10 @@
 <main class="login-panel">
     <div class="brand text-dark mb-4">
         <span class="brand-mark">SS</span>
-        <span>Social Scheduler</span>
+        <span>
+            <strong>Social Scheduler</strong>
+            <small>Publishing Operations</small>
+        </span>
     </div>
     <h1>Sign in</h1>
     <p class="text-muted">Use your internal administrator account.</p>

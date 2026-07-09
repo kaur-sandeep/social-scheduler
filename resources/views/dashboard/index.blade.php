@@ -7,8 +7,11 @@
 <div class="metric-grid">
     @foreach($metrics as $label => $value)
         <div class="metric">
-            <span>{{ Str::headline($label) }}</span>
-            <strong>{{ number_format($value) }}</strong>
+            <div>
+                <span>{{ Str::headline($label) }}</span>
+                <strong>{{ number_format($value) }}</strong>
+            </div>
+            <i class="bi bi-activity"></i>
         </div>
     @endforeach
 </div>
@@ -17,11 +20,14 @@
     <div class="col-xl-8">
         <div class="panel">
             <div class="panel-header">
-                <h2>Upcoming Posts</h2>
-                <a href="{{ route('calendar.index') }}">Open calendar</a>
+                <div>
+                    <h2>Upcoming Posts</h2>
+                    <p>Next scheduled content across connected channels</p>
+                </div>
+                <a class="panel-link" href="{{ route('calendar.index') }}">Open calendar</a>
             </div>
             <div class="table-responsive">
-                <table class="table align-middle">
+                <table class="table app-table align-middle">
                     <thead><tr><th>Time</th><th>Platform</th><th>Page</th><th>Status</th><th>Caption</th></tr></thead>
                     <tbody>
                     @forelse($upcoming as $post)
@@ -29,7 +35,7 @@
                             <td>{{ optional($post->scheduled_at)->timezone(auth()->user()->timezone)->format('M d, H:i') }}</td>
                             <td><span class="platform-dot platform-{{ $post->platform }}"></span>{{ ucfirst($post->platform) }}</td>
                             <td>{{ $post->socialPage?->page_name ?? 'Profile' }}</td>
-                            <td><span class="badge text-bg-light">{{ $post->status->value }}</span></td>
+                            <td><span class="badge status-badge">{{ $post->status->value }}</span></td>
                             <td>{{ Str::limit($post->message, 90) }}</td>
                         </tr>
                     @empty
@@ -42,16 +48,23 @@
     </div>
     <div class="col-xl-4">
         <div class="panel">
-            <div class="panel-header"><h2>Right Sidebar</h2></div>
-            @foreach($recent as $post)
+            <div class="panel-header">
+                <div>
+                    <h2>Recent Activity</h2>
+                    <p>Latest post states</p>
+                </div>
+            </div>
+            @forelse($recent as $post)
                 <div class="side-item">
                     <span class="platform-dot platform-{{ $post->platform }}"></span>
                     <div>
-                        <strong>{{ ucfirst($post->platform) }} · {{ $post->status->value }}</strong>
+                        <strong>{{ ucfirst($post->platform) }} - {{ $post->status->value }}</strong>
                         <p>{{ Str::limit($post->message, 70) }}</p>
                     </div>
                 </div>
-            @endforeach
+            @empty
+                <p class="text-muted mb-0">No activity yet.</p>
+            @endforelse
         </div>
     </div>
 </div>
