@@ -11,8 +11,17 @@
             <tbody>
             @forelse($posts as $post)
                 <tr>
-                    <td>{{ optional($post->scheduled_at)->timezone(auth()->user()->timezone)->format('M d, Y H:i') ?? 'Draft' }}</td>
-                    <td><span class="platform-dot platform-{{ $post->platform }}"></span>{{ ucfirst($post->platform) }}</td>
+                    <td>
+                        @if($post->scheduled_at)
+                            {{ $post->scheduled_at->timezone(auth()->user()->timezone)->format('M d, Y H:i') }}
+                        @elseif($post->published_at)
+                            Published Now
+                        @else
+                            Draft
+                        @endif
+                    </td>
+                    <td>
+                        <span class="platform-dot platform-{{ $post->platform }}"></span>{{ ucfirst($post->platform) }}</td>
                     <td>{{ $post->socialPage?->page_name ?? 'Profile' }}</td>
                     <td><span class="badge status-badge">{{ $post->status->value }}</span></td>
                     <td>{{ Str::limit($post->message, 110) }}</td>

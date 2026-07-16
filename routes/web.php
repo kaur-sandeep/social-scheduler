@@ -9,6 +9,11 @@ use App\Http\Controllers\Admin\SettingsController;
 use App\Http\Controllers\AuthController;
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\FacebookController;
+use App\Http\Controllers\YouTubeController;
+use App\Http\Controllers\LinkedInController;
+use App\Http\Controllers\TwitterController;
+use App\Http\Controllers\PinterestController;
+use App\Http\Controllers\TikTokController;
 
 Route::get('/', function () {
     return auth()->check() ? redirect()->route('dashboard') : view('welcome');
@@ -29,6 +34,21 @@ Route::middleware('auth')->group(function () {
     Route::get('/facebook/login', [FacebookController::class, 'redirect'])->name('facebook.redirect');
     Route::get('/facebook/callback', [FacebookController::class, 'callback'])->name('facebook.callback');
     Route::post('/facebook/accounts/{account}/disconnect', [FacebookController::class, 'disconnect'])->name('facebook.disconnect');
+    Route::get('/youtube/login', [YouTubeController::class, 'redirect'])->name('youtube.redirect');
+    Route::get('/youtube/callback', [YouTubeController::class, 'callback'])->name('youtube.callback');
+    Route::post('/youtube/accounts/{account}/disconnect', [YouTubeController::class, 'disconnect'])->name('youtube.disconnect');
+    Route::get('/linkedin/login', [LinkedInController::class, 'redirect'])->name('linkedin.redirect');
+    Route::get('/linkedin/callback', [LinkedInController::class, 'callback'])->name('linkedin.callback');
+    Route::post('/linkedin/accounts/{account}/disconnect', [LinkedInController::class, 'disconnect'])->name('linkedin.disconnect');
+    Route::get('/twitter/login', [TwitterController::class, 'redirect'])->name('twitter.redirect');
+    Route::get('/twitter/callback', [TwitterController::class, 'callback'])->name('twitter.callback');
+    Route::post('/twitter/accounts/{account}/disconnect', [TwitterController::class, 'disconnect'])->name('twitter.disconnect');
+    Route::get('/pinterest/login', [PinterestController::class, 'redirect'])->name('pinterest.redirect');
+    Route::get('/pinterest/callback', [PinterestController::class, 'callback'])->name('pinterest.callback');
+    Route::post('/pinterest/accounts/{account}/disconnect', [PinterestController::class, 'disconnect'])->name('pinterest.disconnect');
+    Route::get('/tiktok/login', [TikTokController::class, 'redirect'])->name('tiktok.redirect');
+    Route::get('/tiktok/callback', [TikTokController::class, 'callback'])->name('tiktok.callback');
+    Route::post('/tiktok/accounts/{account}/disconnect', [TikTokController::class, 'disconnect'])->name('tiktok.disconnect');
 
     Route::resource('posts', PostController::class)->only(['index', 'create', 'store', 'destroy']);
     Route::patch('/posts/{post}/move', [PostController::class, 'move'])->name('posts.move');

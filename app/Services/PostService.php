@@ -17,7 +17,11 @@ class PostService
     public function create(User $user, array $data): Post
     {
         return DB::transaction(function () use ($user, $data) {
-            $status = ($data['action'] ?? 'draft') === 'schedule' ? PostStatus::Pending : PostStatus::Draft;
+            $status = match ($data['action'] ?? 'draft') {
+                'schedule' => PostStatus::Pending,
+                'publish' => PostStatus::Queued,
+                default => PostStatus::Draft,
+            };
             $scheduledAt = $this->scheduledAt($data);
 
             $post = Post::query()->create([

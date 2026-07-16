@@ -42,13 +42,13 @@
                 <div class="panel-header">
                     <div>
                         <h2>Publishing</h2>
-                        <p>Choose the destination and schedule</p>
+                        <p>Choose the destination and schedule</p> 
                     </div>
                 </div>
 
                 <label class="form-label">Platform</label>
                 <select class="form-select" name="platform" required>
-                    @foreach(['facebook','instagram','linkedin','tiktok','twitter','pinterest','youtube','threads'] as $provider)
+                    @foreach(['facebook','instagram','linkedin','tiktok','twitter','pinterest','youtube'] as $provider)
                         <option value="{{ $provider }}">{{ ucfirst($provider) }}</option>
                     @endforeach
                 </select>
@@ -78,6 +78,7 @@
                 <div class="publish-actions">
                     <button class="btn btn-outline-secondary" name="action" value="draft"><i class="bi bi-save"></i> Save Draft</button>
                     <button class="btn btn-primary" name="action" value="schedule"><i class="bi bi-calendar-plus"></i> Schedule</button>
+                    <button class="btn btn-dark" name="action" value="publish"><i class="bi bi-send"></i> Publish now</button>
                 </div>
             </div>
         </div>

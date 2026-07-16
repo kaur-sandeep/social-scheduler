@@ -68,24 +68,55 @@ class FacebookService
     public function syncPages(SocialAccount $account): void
     {
         $pages = $this->get('/me/accounts', [
-            'fields' => 'id,name,category,access_token,tasks,picture{url}',
+            'fields' => 'id,name,category,access_token,tasks,picture{url},instagram_business_account{id,username,profile_picture_url}',
             'access_token' => $account->user_access_token,
         ]);
 
         foreach ($pages['data'] ?? [] as $page) {
-            $this->accounts->upsertPage([
-                'social_account_id' => $account->id,
-                'provider' => 'facebook',
-                'page_id' => $page['id'],
-            ], [
-                'page_name' => $page['name'],
-                'category' => $page['category'] ?? null,
-                'profile_image' => data_get($page, 'picture.data.url'),
-                'page_access_token' => $page['access_token'],
-                'permissions' => $page['tasks'] ?? [],
-                'status' => 'active',
-            ]);
-        }
+
+                $instagram = $this->getInstagramBusinessAccount(
+                    $page['id'],
+                    $page['access_token']
+                );
+
+                $this->accounts->upsertPage(
+
+                    [
+                        'social_account_id' => $account->id,
+                        'provider' => 'facebook',
+                        'page_id' => $page['id'],
+                    ],
+
+                    [
+
+                        'page_name' => $page['name'],
+
+                        'category' => $page['category'] ?? null,
+
+                        'profile_image' => data_get(
+                            $page,
+                            'picture.data.url'
+                        ),
+
+                        'page_access_token' => $page['access_token'],
+
+                        'instagram_business_id' =>
+                            data_get($instagram, 'id'),
+
+                        'instagram_username' =>
+                            data_get($instagram, 'username'),
+
+                        'instagram_profile_image' =>
+                            data_get($instagram, 'profile_picture_url'),
+
+                        'permissions' => $page['tasks'] ?? [],
+
+                        'status' => 'active',
+
+                    ]
+                );
+
+            }
     }
 
     public function publish(Post $post): array
@@ -203,5 +234,30 @@ class FacebookService
     private function http(): PendingRequest
     {
         return Http::timeout(30)->retry(2, 300);
+    }
+
+    private function getInstagramBusinessAccount(
+        string $pageId,
+        string $pageToken
+    ): ?array
+    {
+        $response = $this->http()->get(
+            $this->baseUrl.'/'.$pageId,
+            [
+                'fields' =>
+                    'instagram_business_account{id,username,profile_picture_url}',
+
+                'access_token' => $pageToken,
+            ]
+        );
+
+        if ($response->failed()) {
+            return null;
+        }
+
+        return data_get(
+            $response->json(),
+            'instagram_business_account'
+        );
     }
 }

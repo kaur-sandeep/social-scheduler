@@ -8,6 +8,7 @@ enum PostStatus: string
     case Pending = 'pending';
     case Queued = 'queued';
     case Publishing = 'publishing';
+    case Retrying = 'retrying';
     case Published = 'published';
     case Failed = 'failed';
     case Cancelled = 'cancelled';

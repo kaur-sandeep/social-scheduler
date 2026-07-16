@@ -38,15 +38,18 @@ class PostController extends Controller
     {
         $post = $service->create($request->user(), $request->validated());
 
-        if ($request->input('publish_now') === '1') {
+        if ($request->input('action') === 'publish') {
             $scheduler->dispatch($post);
         }
 
-        return redirect()->route('posts.index')->with('success', 'Post saved.');
+        return redirect()->route('posts.index')->with('success', $request->input('action') === 'publish' ? 'Post queued for publishing.' : 'Post saved.');
     }
 
     public function move(MovePostRequest $request, Post $post, PostService $service): JsonResponse
     {
+        abort_unless($post->user_id === $request->user()->id, 403);
+        abort_if(in_array($post->status, [\App\Enums\PostStatus::Published, \App\Enums\PostStatus::Publishing], true), 422, 'Published or publishing posts cannot be edited.');
+
         return response()->json($service->move($post, $request->string('scheduled_at'), $request->string('timezone')));
     }
 

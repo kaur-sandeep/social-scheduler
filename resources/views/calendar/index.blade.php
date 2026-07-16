@@ -12,8 +12,8 @@
     <div class="calendar-toolbar">
         <select id="platformFilter" class="form-select form-select-sm">
             <option value="">All platforms</option>
-            @foreach(['facebook','instagram','linkedin','tiktok','twitter','pinterest','youtube','threads'] as $provider)
-                <option value="{{ $provider }}">{{ ucfirst($provider) }}</option>
+            @foreach(['facebook','instagram','linkedin','tiktok','twitter','pinterest','youtube'] as $provider)
+                <option value="{{ $provider }}">{{ ucfirst($provider) }}</option> 
             @endforeach
         </select>
         <select id="statusFilter" class="form-select form-select-sm">

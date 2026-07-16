@@ -1,4 +1,12 @@
-<p align="center"><a href="https://laravel.com" target="_blank"><img src="https://raw.githubusercontent.com/laravel/art/master/logo-lockup/5%20SVG/2%20CMYK/1%20Full%20Color/laravel-logolockup-cmyk-red.svg" width="400" alt="Laravel Logo"></a></p>
+# Social Scheduler
+
+Laravel 12 social scheduling application with draft, immediate, and scheduled publishing, queue-based delivery, activity logs, encrypted provider tokens, and Facebook OAuth.
+
+Start locally with `composer setup`, then run `php artisan storage:link`, `php artisan queue:work`, and `php artisan schedule:work`. Configure provider credentials in `.env` before connecting accounts.
+
+See [provider setup](docs/PROVIDER_SETUP.md) for API requirements, cron setup, provider limitations, and troubleshooting prerequisites.
+
+---
 
 <p align="center">
 <a href="https://github.com/laravel/framework/actions"><img src="https://github.com/laravel/framework/workflows/tests/badge.svg" alt="Build Status"></a>

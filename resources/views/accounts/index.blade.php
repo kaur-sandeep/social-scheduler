@@ -10,15 +10,22 @@
             <h2>Providers</h2>
             <p>Connect channels and sync managed pages</p>
         </div>
-        <a class="btn btn-sm btn-primary" href="{{ route('facebook.redirect') }}"><i class="bi bi-facebook"></i> Connect Facebook</a>
+        <div class="d-flex gap-2">
+            <a class="btn btn-sm btn-primary" href="{{ route('facebook.redirect') }}"><i class="bi bi-facebook"></i> Connect Facebook</a>
+            <a class="btn btn-sm btn-danger" href="{{ route('youtube.redirect') }}"><i class="bi bi-youtube"></i> Connect YouTube</a>
+            <a class="btn btn-sm btn-primary" href="{{ route('linkedin.redirect') }}"><i class="bi bi-linkedin"></i> Connect LinkedIn</a>
+            <a class="btn btn-sm btn-dark" href="{{ route('twitter.redirect') }}">Connect X</a>
+            <a class="btn btn-sm btn-danger" href="{{ route('pinterest.redirect') }}"><i class="bi bi-pinterest"></i> Connect Pinterest</a>
+            <a class="btn btn-sm btn-dark" href="{{ route('tiktok.redirect') }}">Connect TikTok</a>
+        </div>
     </div>
     <div class="provider-grid">
-        @foreach(['facebook','instagram','linkedin','tiktok','twitter','pinterest','youtube','threads'] as $provider)
+        @foreach(['facebook','instagram','linkedin','tiktok','twitter','pinterest','youtube'] as $provider)
             <div class="provider-card">
                 <span class="platform-dot platform-{{ $provider }}"></span>
                 <div>
                     <strong>{{ ucfirst($provider) }}</strong>
-                    <small>{{ $provider === 'facebook' ? 'OAuth ready' : 'Extension point ready' }}</small>
+                    <small>{{ in_array($provider, ['facebook', 'youtube', 'linkedin', 'twitter', 'pinterest', 'tiktok']) ? 'OAuth ready' : 'Extension point ready' }}</small>
                 </div>
             </div>
         @endforeach
@@ -32,7 +39,7 @@
                 <h2>{{ $account->name }} <span class="badge status-badge">{{ $account->status }}</span></h2>
                 <p>{{ ucfirst($account->provider) }} account connected {{ optional($account->connected_at)->diffForHumans() }}</p>
             </div>
-            <form method="post" action="{{ route('facebook.disconnect', $account) }}">
+            <form method="post" action="{{ route($account->provider.'.disconnect', $account) }}">
                 @csrf
                 <button class="btn btn-sm btn-outline-danger"><i class="bi bi-link-45deg"></i> Disconnect</button>
             </form>

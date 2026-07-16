@@ -4,6 +4,13 @@ namespace App\Services;
 
 use App\Enums\PostStatus;
 use App\Jobs\PublishFacebookPost;
+use App\Jobs\PublishInstagramPost;
+use App\Jobs\PublishLinkedInPost;
+use App\Jobs\PublishPinterestPost;
+use App\Jobs\PublishThreadsPost;
+use App\Jobs\PublishTikTokPost;
+use App\Jobs\PublishTwitterPost;
+use App\Jobs\PublishYouTubePost;
 use App\Models\Post;
 use App\Repositories\PostRepository;
 use Illuminate\Support\Facades\DB;
@@ -31,9 +38,25 @@ class SchedulerService
 
     public function dispatch(Post $post): void
     {
-        match ($post->platform) {
-            'facebook' => PublishFacebookPost::dispatch($post),
-            default => throw new \InvalidArgumentException("Publishing for {$post->platform} is not implemented yet."),
+       match ($post->platform) {
+
+            'facebook' =>
+                PublishFacebookPost::dispatch($post),
+
+            'instagram' =>
+                PublishInstagramPost::dispatch($post),
+
+            'linkedin' => PublishLinkedInPost::dispatch($post),
+            'tiktok' => PublishTikTokPost::dispatch($post),
+            'twitter' => PublishTwitterPost::dispatch($post),
+            'pinterest' => PublishPinterestPost::dispatch($post),
+            'youtube' => PublishYouTubePost::dispatch($post),
+            'threads' => PublishThreadsPost::dispatch($post),
+
+            default =>
+                throw new \InvalidArgumentException(
+                    "Publishing for {$post->platform} is not implemented yet."
+                ),
         };
     }
 }
