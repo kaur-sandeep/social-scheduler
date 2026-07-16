@@ -55,8 +55,17 @@ class LinkedInService
     public function publish(Post $post): array
     {
         $page = $this->page($post, 'linkedin');
-        if ($post->media->isNotEmpty()) throw new RuntimeException('LinkedIn image and video uploads are not enabled yet; publish this LinkedIn post without attachments.');
-        return $this->client->createPost($post, $this->accessToken($page->account), ['author' => $page->page_id, 'commentary' => $post->message, 'visibility' => 'PUBLIC', 'distribution' => ['feedDistribution' => 'MAIN_FEED', 'targetEntities' => [], 'thirdPartyDistributionChannels' => []], 'lifecycleState' => 'PUBLISHED', 'isReshareDisabledByAuthor' => false]);
+        $token = $this->accessToken($page->account);
+        $payload = ['author' => $page->page_id, 'commentary' => $post->message, 'visibility' => 'PUBLIC', 'distribution' => ['feedDistribution' => 'MAIN_FEED', 'targetEntities' => [], 'thirdPartyDistributionChannels' => []], 'lifecycleState' => 'PUBLISHED', 'isReshareDisabledByAuthor' => false];
+
+        if ($post->media->isNotEmpty()) {
+            if ($post->media->count() !== 1 || $post->media->first()->media_type !== 'image') throw new RuntimeException('LinkedIn currently supports one image attachment per post. Video and multi-image uploads are not supported.');
+            $media = $post->media->first();
+            if (! in_array($media->mime_type, ['image/jpeg', 'image/png', 'image/gif'], true)) throw new RuntimeException('LinkedIn images must be JPEG, PNG, or GIF files.');
+            $payload['content'] = ['media' => ['id' => $this->client->uploadImage($post, $token, $page->page_id, $media->path, $media->mime_type)]];
+        }
+
+        return $this->client->createPost($post, $token, $payload);
     }
 
     private function accessToken(SocialAccount $account): string
