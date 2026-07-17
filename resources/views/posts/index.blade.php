@@ -5,6 +5,7 @@
 
 @section('content')
 <div class="panel">
+    <div class="text-end mb-3"><a class="btn btn-sm btn-outline-secondary" href="{{ route('posts.deleted') }}">View deleted posts</a></div>
     <div class="table-responsive">
         <table class="table app-table align-middle">
             <thead><tr><th>Scheduled</th><th>Platform</th><th>Page</th><th>Status</th><th>Caption</th><th></th></tr></thead>
@@ -26,10 +27,13 @@
                     <td><span class="badge status-badge">{{ $post->status->value }}</span></td>
                     <td>{{ Str::limit($post->message, 110) }}</td>
                     <td class="text-end">
+                        @if(!in_array($post->status, [\App\Enums\PostStatus::Published, \App\Enums\PostStatus::Publishing], true))
+                            <a class="btn btn-sm btn-outline-secondary" href="{{ route('posts.edit', $post) }}" title="Edit post"><i class="bi bi-pencil"></i></a>
+                        @endif
                         <form method="post" action="{{ route('posts.destroy', $post) }}">
                             @csrf
                             @method('delete')
-                            <button class="btn btn-sm btn-outline-danger" data-confirm-delete><i class="bi bi-trash"></i></button>
+                            <button class="btn btn-sm btn-outline-danger" data-confirm-delete data-confirm-title="Delete Scheduled Post" data-confirm-message="Are you sure you want to delete this scheduled post? This action can be restored later."><i class="bi bi-trash"></i></button>
                         </form>
                     </td>
                 </tr>

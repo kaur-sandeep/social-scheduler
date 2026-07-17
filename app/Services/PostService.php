@@ -60,6 +60,28 @@ class PostService
         return $post->refresh();
     }
 
+    public function update(Post $post, array $data): Post
+    {
+        return DB::transaction(function () use ($post, $data) {
+            $status = match ($data['action'] ?? 'draft') {
+                'schedule' => PostStatus::Pending,
+                'publish' => PostStatus::Queued,
+                default => PostStatus::Draft,
+            };
+
+            $post->update([
+                'project_id' => $data['project_id'], 'social_page_id' => $data['social_page_id'] ?? null,
+                'platform' => $data['platform'], 'message' => $data['message'], 'status' => $status,
+                'scheduled_date' => $data['scheduled_date'] ?? null, 'scheduled_time' => $data['scheduled_time'] ?? null,
+                'scheduled_at' => $this->scheduledAt($data), 'timezone' => $data['timezone'],
+                'updated_by' => $post->user_id,
+            ]);
+            $this->mediaService->attachUploads($post, $data['media'] ?? []);
+
+            return $post->refresh();
+        });
+    }
+
     private function scheduledAt(array $data): ?Carbon
     {
         if (empty($data['scheduled_date']) || empty($data['scheduled_time'])) {

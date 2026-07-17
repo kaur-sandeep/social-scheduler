@@ -24,16 +24,56 @@ class ProjectSettingsController extends Controller
     public function destroy(Project $project): RedirectResponse
     {
         abort_unless($project->user_id === request()->user()->id, 403);
-        $project->delete();
+        DB::transaction(function () use ($project): void {
+            $project->socialAppCredentials()->delete();
+            $project->socialAccounts()->each(function ($account): void {
+                $account->pages()->delete();
+                $account->delete();
+            });
+            $project->posts()->delete();
+            $project->delete();
+        });
         ActivityLog::create(['user_id' => request()->user()->id, 'event' => 'project_deleted', 'subject_type' => Project::class, 'subject_id' => $project->id]);
-        return redirect()->route('project-settings.index')->with('success', 'Project deleted.');
+        return redirect()->route('project-settings.index')->with('success', 'Project moved to deleted records.');
+    }
+
+    public function restore(int $project): RedirectResponse
+    {
+        $project = Project::onlyTrashed()->where('user_id', request()->user()->id)->findOrFail($project);
+        DB::transaction(function () use ($project): void {
+            $project->restore();
+            $project->socialAppCredentials()->onlyTrashed()->restore();
+            $project->socialAccounts()->onlyTrashed()->each(function ($account): void {
+                $account->restore();
+                $account->pages()->onlyTrashed()->restore();
+            });
+            $project->posts()->onlyTrashed()->restore();
+        });
+        return redirect()->route('project-settings.index', ['project_id' => $project->id])->with('success', 'Project restored.');
+    }
+
+    public function forceDestroy(int $project): RedirectResponse
+    {
+        abort_unless(request()->user()->is_admin, 403);
+        $project = Project::onlyTrashed()->where('user_id', request()->user()->id)->findOrFail($project);
+
+        DB::transaction(function () use ($project): void {
+            $project->socialAppCredentials()->withTrashed()->forceDelete();
+            $project->socialAccounts()->withTrashed()->each(function ($account): void {
+                $account->pages()->withTrashed()->forceDelete();
+                $account->forceDelete();
+            });
+            $project->posts()->withTrashed()->forceDelete();
+            $project->forceDelete();
+        });
+
+        return redirect()->route('project-settings.index')->with('success', 'Project permanently deleted.');
     }
 
     public function index(ProjectRepository $projects): View
     {
         $project = $projects->findForUser(request()->user(), (int) request('project_id')) ?? $projects->projectsFor(request()->user())->first();
-        abort_unless($project, 404, 'Create a project before configuring credentials.');
-        return view('project-settings.index', ['project' => $project, 'projects' => $projects->projectsFor(request()->user()), 'credentials' => $project->socialAppCredentials->keyBy('provider')]);
+        return view('project-settings.index', ['project' => $project, 'projects' => $projects->projectsFor(request()->user()), 'deletedProjects' => $projects->deletedFor(request()->user()), 'credentials' => $project?->socialAppCredentials->keyBy('provider') ?? collect()]);
     }
     public function update(UpdateProjectCredentialsRequest $request, Project $project): RedirectResponse
     {

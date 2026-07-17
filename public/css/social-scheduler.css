@@ -501,6 +501,20 @@ body {
     margin-top: 24px;
 }
 
+.composer-steps { display: flex; gap: 8px; flex-wrap: wrap; }
+.composer-steps span { background: #eef4ff; border-radius: 999px; color: #1d4ed8; font-size: 12px; font-weight: 700; padding: 7px 11px; }
+.platform-picker, .content-type-group { display: flex; flex-wrap: wrap; gap: 8px; }
+.platform-choice, .content-type { background: #fff; border: 1px solid var(--line); border-radius: 8px; color: #344054; font-size: 13px; font-weight: 700; padding: 9px 11px; }
+.platform-choice.active { background: #eef4ff; border-color: var(--primary); color: var(--primary-dark); }
+.content-type { cursor: pointer; }
+.content-type input { accent-color: var(--primary); }
+.guidelines-card, .time-card { background: #f8fafc; border: 1px solid #e5eaf0; border-radius: 8px; color: #475467; padding: 12px; }
+.media-thumbnails { display: flex; flex-wrap: wrap; gap: 8px; }
+.media-chip { background: #eef4ff; border-radius: 6px; color: #344054; font-size: 12px; max-width: 100%; overflow: hidden; padding: 7px 9px; text-overflow: ellipsis; white-space: nowrap; }
+.post-preview { border: 1px solid #e5e7eb; border-radius: 10px; margin: auto; max-width: 520px; overflow: hidden; padding: 16px; }
+.preview-head { align-items: center; display: flex; gap: 8px; margin-bottom: 14px; }
+.preview-media { background-position: center; background-size: cover; height: 260px; margin: 0 -16px 16px; }
+
 .settings-tile i {
     align-items: center;
     background: #eef4ff;

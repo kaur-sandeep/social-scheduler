@@ -1,105 +1,57 @@
 @extends('layouts.app')
 
-@section('title', 'Create Post')
-@section('subtitle', 'Compose, preview, save drafts, or schedule publishing')
+@php($editing = isset($post))
+@section('title', $editing ? 'Edit Post' : 'Create Post')
+@section('subtitle', $editing ? 'Update this post before it is published' : 'Build, preview, and schedule your content')
 
 @section('content')
-<form class="composer-layout" method="post" action="{{ route('posts.store') }}" enctype="multipart/form-data">
+<form class="composer-layout" method="post" action="{{ $editing ? route('posts.update', $post) : route('posts.store') }}" enctype="multipart/form-data">
     @csrf
+    @if($editing) @method('PUT') @endif
+    <div class="composer-steps mb-4"><span>1. Project</span><span>2. Platform</span><span>3. Destination</span><span>4. Schedule</span></div>
     <div class="row g-4">
         <div class="col-xl-7">
             <div class="panel composer-card">
-                <div class="panel-header">
-                    <div>
-                        <h2>Content</h2>
-                        <p>Write the caption and attach creative assets</p>
-                    </div>
-                </div>
+                <div class="panel-header"><div><h2>Content</h2><p>Write your post and see a live platform preview.</p></div><span id="caption-counter" class="small text-muted"></span></div>
+                <label class="form-label" for="message">Caption</label>
+                <textarea class="form-control composer-text" id="message" name="message" maxlength="63206" required>{{ old('message', $post->message ?? '') }}</textarea>
+                <div class="composer-tools"><button type="button" class="btn btn-light btn-sm" data-insert="#" title="Add hashtag"># Hashtag</button><button type="button" class="btn btn-light btn-sm" data-insert="@" title="Add mention">@ Mention</button></div>
 
-                <label class="form-label">Caption</label>
-                <textarea class="form-control composer-text" name="message" maxlength="63206" required>{{ old('message') }}</textarea>
-
-                <div class="composer-tools">
-                    <button type="button" class="btn btn-light btn-sm" title="Emoji"><i class="bi bi-emoji-smile"></i></button>
-                    <button type="button" class="btn btn-light btn-sm" title="Hashtag">#</button>
-                    <button type="button" class="btn btn-light btn-sm" title="Mention">@</button>
-                </div>
-
-                <label class="form-label mt-3">Media</label>
-                <div class="upload-zone">
-                    <i class="bi bi-cloud-arrow-up"></i>
-                    <div>
-                        <strong>Upload images or videos</strong>
-                        <span>JPG, PNG, WEBP, GIF, MP4, MOV, AVI, WEBM</span>
-                    </div>
-                    <input class="form-control" type="file" name="media[]" multiple accept="image/*,video/*">
-                </div>
+                <div class="mt-4"><label class="form-label">What would you like to publish?</label><div class="content-type-group" id="content-types"></div></div>
+                <label class="form-label mt-4">Media</label>
+                <div class="upload-zone"><i class="bi bi-cloud-arrow-up"></i><div><strong>Drop images or videos here</strong><span>JPG, PNG, WEBP, GIF, MP4, MOV, AVI, WEBM</span></div><input class="form-control" id="media" type="file" name="media[]" multiple accept="image/*,video/*"></div>
+                <div class="media-thumbnails mt-3" id="media-thumbnails">@if($editing) @foreach($post->media as $media)<span class="media-chip"><i class="bi bi-file-earmark"></i> {{ basename($media->path) }}</span>@endforeach @endif</div>
             </div>
+            <div class="panel mt-4"><div class="panel-header"><div><h2>Live preview</h2><p id="preview-platform">Select a platform to preview.</p></div></div><div class="post-preview"><div class="preview-head"><span class="platform-dot" id="preview-dot"></span><strong id="preview-name">Your profile</strong></div><div id="preview-media" class="preview-media d-none"></div><p id="preview-message" class="mb-0 text-break">Your caption will appear here.</p></div></div>
         </div>
 
-        <div class="col-xl-5">
-            <div class="panel composer-card sticky-panel">
-                <div class="panel-header">
-                    <div>
-                        <h2>Publishing</h2>
-                        <p>Choose the destination and schedule</p> 
-                    </div>
-                </div>
-
-                <label class="form-label">Platform</label>
-                <label class="form-label">Project</label>
-                <select class="form-select" name="project_id" id="project_id" required>
-                    <option value="">Select project</option>
-                    @foreach($projects as $item)<option value="{{ $item->id }}" @selected(old('project_id', $project?->id) === $item->id)>{{ $item->name }}</option>@endforeach
-                </select>
-
-                <label class="form-label mt-3">Platform</label>
-                <select class="form-select" name="platform" required>
-                    @foreach(['facebook','instagram','linkedin','tiktok','twitter','pinterest','youtube'] as $provider)
-                        <option value="{{ $provider }}">{{ ucfirst($provider) }}</option>
-                    @endforeach
-                </select>
-
-                <label class="form-label mt-3">Page/Profile</label>
-                <select class="form-select" name="social_page_id">
-                    <option value="">Select profile/page</option>
-                    @foreach($pages as $page)
-                        <option value="{{ $page->id }}">{{ ucfirst($page->provider) }} - {{ $page->page_name }}</option>
-                    @endforeach
-                </select>
-
-                <div class="row g-2 mt-2">
-                    <div class="col">
-                        <label class="form-label">Date</label>
-                        <input class="form-control" type="date" name="scheduled_date" value="{{ old('scheduled_date') }}">
-                    </div>
-                    <div class="col">
-                        <label class="form-label">Time</label>
-                        <input class="form-control" type="time" name="scheduled_time" value="{{ old('scheduled_time') }}">
-                    </div>
-                </div>
-
-                <label class="form-label mt-3">Timezone</label>
-                <input class="form-control" name="timezone" value="{{ old('timezone', auth()->user()->timezone ?? config('app.timezone')) }}" required>
-
-                <div class="publish-actions">
-                    <button class="btn btn-outline-secondary" name="action" value="draft"><i class="bi bi-save"></i> Save Draft</button>
-                    <button class="btn btn-primary" name="action" value="schedule"><i class="bi bi-calendar-plus"></i> Schedule</button>
-                    <button class="btn btn-dark" name="action" value="publish"><i class="bi bi-send"></i> Publish now</button>
-                </div>
-            </div>
-        </div>
+        <div class="col-xl-5"><div class="panel composer-card sticky-panel">
+            <div class="panel-header"><div><h2>Publishing</h2><p>Choose where and when this should go live.</p></div></div>
+            <label class="form-label" for="project_id">Project</label><select class="form-select" name="project_id" id="project_id" required><option value="">Select project</option>@foreach($projects as $item)<option value="{{ $item->id }}" @selected((int) old('project_id', $project?->id) === $item->id)>{{ $item->name }}</option>@endforeach</select>
+            <label class="form-label mt-3">Platform</label><div class="platform-picker" id="platform-picker">@foreach(['facebook','instagram','linkedin','twitter','tiktok','youtube'] as $provider)<button type="button" class="platform-choice" data-platform="{{ $provider }}"><span class="platform-dot platform-{{ $provider }}"></span>{{ ucfirst($provider === 'twitter' ? 'X' : $provider) }}</button>@endforeach</div><input type="hidden" name="platform" id="platform" value="{{ old('platform', $post->platform ?? 'facebook') }}">
+            <label class="form-label mt-3" id="destination-label">Page / Profile</label><select class="form-select" name="social_page_id" id="social_page_id"><option value="">Select profile/page</option>@foreach($pages as $page)<option value="{{ $page->id }}" data-provider="{{ $page->provider }}" data-instagram="{{ $page->instagram_business_id ? '1' : '0' }}" @selected((int) old('social_page_id', $post->social_page_id ?? 0) === $page->id)>{{ ucfirst($page->provider) }} - {{ $page->page_name }}{{ $page->instagram_username ? ' / @'.$page->instagram_username : '' }}</option>@endforeach</select><div id="destination-help" class="small text-muted mt-2"></div>
+            <div id="platform-guidelines" class="guidelines-card mt-3 small"></div>
+            <div class="row g-2 mt-2"><div class="col"><label class="form-label">Date</label><input class="form-control" type="date" name="scheduled_date" value="{{ old('scheduled_date', isset($post?->scheduled_date) ? $post->scheduled_date->format('Y-m-d') : '') }}"></div><div class="col"><label class="form-label">Time</label><input class="form-control" type="time" name="scheduled_time" value="{{ old('scheduled_time', $post->scheduled_time ?? '') }}"></div></div>
+            <label class="form-label mt-3">Timezone</label><input class="form-control" id="timezone" list="timezone-options" name="timezone" value="{{ old('timezone', $post->timezone ?? auth()->user()->timezone ?? config('app.timezone')) }}" required><datalist id="timezone-options"><option value="UTC"><option value="America/New_York"><option value="America/Chicago"><option value="America/Los_Angeles"><option value="Europe/London"><option value="Europe/Paris"><option value="Asia/Kolkata"><option value="Asia/Dubai"><option value="Asia/Singapore"><option value="Australia/Sydney"></datalist><div class="small text-muted mt-2">All scheduled posts are stored in UTC and automatically published in the selected timezone.</div><div class="time-card mt-3"><strong>Current time</strong><div id="local-time" class="small mt-1"></div><div id="utc-time" class="small"></div></div>
+            <div class="publish-actions"><button class="btn btn-outline-secondary" name="action" value="draft">Save Draft</button><button class="btn btn-primary" name="action" value="schedule">Schedule Post</button><button class="btn btn-dark" name="action" value="publish">Publish now</button></div>
+        </div></div>
     </div>
 </form>
 @endsection
 
 @push('scripts')
 <script>
-document.getElementById('project_id').addEventListener('change', async function () {
- const target = document.querySelector('[name="social_page_id"]'); target.innerHTML = '<option value="">Loading profiles/pages…</option>';
- const response = await fetch(`{{ route('posts.pages') }}?project_id=${encodeURIComponent(this.value)}`, {headers:{Accept:'application/json'}});
- const pages = response.ok ? await response.json() : [];
- target.innerHTML = '<option value="">Select profile/page</option>' + pages.map(page => `<option value="${page.id}">${page.provider.charAt(0).toUpperCase()+page.provider.slice(1)} - ${page.name}</option>`).join('');
-});
+const projectSelect=document.getElementById('project_id'), platform=document.getElementById('platform'), target=document.getElementById('social_page_id'), message=document.getElementById('message'), counter=document.getElementById('caption-counter'), media=document.getElementById('media');
+let projectPages=[];
+const config={facebook:{limit:63206,types:['Text','Image','Video','Reel'],guide:'Recommended image: 1200 x 630. Videos up to 10GB. Keep captions under 250 characters for best engagement.'},instagram:{limit:2200,types:['Image','Reel','Carousel'],guide:'Image: 1080 x 1080. Reels: 9:16. Caption limit: 2,200 characters. Use 3-10 hashtags.'},linkedin:{limit:3000,types:['Text','Image','Video'],guide:'Recommended image: 1200 x 627. Character limit: 3,000.'},twitter:{limit:280,types:['Text','Image','Video'],guide:'Standard posts support up to 280 characters.'},tiktok:{limit:2200,types:['Video'],guide:'Use 9:16 video and a concise caption.'},youtube:{limit:5000,types:['Video'],guide:'A video is required for YouTube publishing.'}};
+function esc(value){const d=document.createElement('div');d.textContent=value;return d.innerHTML}
+function render(){const key=platform.value, settings=config[key]||config.facebook, isInstagram=key==='instagram';document.querySelectorAll('.platform-choice').forEach(b=>b.classList.toggle('active',b.dataset.platform===key));document.getElementById('platform-guidelines').textContent=settings.guide;document.getElementById('content-types').innerHTML=settings.types.map((type,i)=>`<label class="content-type"><input type="radio" name="content_type" value="${type.toLowerCase()}" ${i===0?'checked':''}> ${type}</label>`).join('');const pages=projectPages.filter(p=>p.provider===key||(isInstagram&&p.provider==='facebook'&&p.instagram_business_id));const selected=target.value;target.innerHTML='<option value="">Select profile/page</option>'+pages.map(p=>`<option value="${p.id}">${isInstagram?`Facebook Page: ${esc(p.name)} → Instagram: @${esc(p.instagram_username||'Business Account')}`:`${esc(p.name)}`}</option>`).join(''); if([...target.options].some(o=>o.value===selected))target.value=selected;document.getElementById('destination-label').textContent=isInstagram?'Facebook Page':'Page / Profile';document.getElementById('destination-help').textContent=isInstagram?'Choose the Facebook Page; its linked Instagram Business Profile will be used automatically.':'';document.getElementById('preview-platform').textContent=`${key[0].toUpperCase()+key.slice(1)} preview`;document.getElementById('preview-dot').className=`platform-dot platform-${key}`;updateCounter();updatePreview();}
+function updateCounter(){const limit=(config[platform.value]||config.facebook).limit,len=message.value.length;counter.textContent=`${len} / ${limit}`;counter.className=`small ${len>limit?'text-danger':'text-muted'}`;}
+function updatePreview(){document.getElementById('preview-message').textContent=message.value||'Your caption will appear here.';const chosen=target.options[target.selectedIndex];document.getElementById('preview-name').textContent=chosen&&chosen.value?chosen.text.replace(/^Facebook Page: /,'').split(' → ')[0]:'Your profile';}
+projectPages=Array.from(target.options).slice(1).map(o=>({id:o.value,provider:o.dataset.provider,name:o.textContent.trim(),instagram_business_id:o.dataset.instagram==='1',instagram_username:o.textContent.match(/@([^ ]+)/)?.[1]}));
+document.querySelectorAll('.platform-choice').forEach(b=>b.addEventListener('click',()=>{platform.value=b.dataset.platform;render()}));target.addEventListener('change',updatePreview);message.addEventListener('input',()=>{updateCounter();updatePreview()});document.querySelectorAll('[data-insert]').forEach(b=>b.addEventListener('click',()=>{message.value+=`${message.value?' ':''}${b.dataset.insert}`;message.focus();updateCounter();updatePreview()}));
+projectSelect.addEventListener('change',async function(){target.innerHTML='<option>Loading profiles/pages…</option>';const response=await fetch(`{{ route('posts.pages') }}?project_id=${encodeURIComponent(this.value)}`,{headers:{Accept:'application/json'}});projectPages=response.ok?await response.json():[];render()});
+media.addEventListener('change',()=>{const files=[...media.files],preview=document.getElementById('preview-media');document.getElementById('media-thumbnails').innerHTML=files.map(f=>`<span class="media-chip"><i class="bi bi-file-earmark"></i> ${esc(f.name)}</span>`).join('');if(files[0]&&files[0].type.startsWith('image/')){preview.style.backgroundImage=`url('${URL.createObjectURL(files[0])}')`;preview.classList.remove('d-none')}else preview.classList.add('d-none');});
+const timezone=document.getElementById('timezone');if(!timezone.value||timezone.value==='UTC')timezone.value=Intl.DateTimeFormat().resolvedOptions().timeZone||timezone.value;function updateTimes(){const zone=timezone.value||'UTC',now=new Date();try{document.getElementById('local-time').textContent=`${zone}: ${new Intl.DateTimeFormat(undefined,{dateStyle:'medium',timeStyle:'short',timeZone:zone}).format(now)}`;document.getElementById('utc-time').textContent=`UTC: ${new Intl.DateTimeFormat(undefined,{dateStyle:'medium',timeStyle:'short',timeZone:'UTC'}).format(now)} UTC`;}catch(e){document.getElementById('local-time').textContent='Enter a valid IANA timezone.'}}timezone.addEventListener('change',updateTimes);setInterval(updateTimes,30000);render();updateTimes();
 </script>
 @endpush

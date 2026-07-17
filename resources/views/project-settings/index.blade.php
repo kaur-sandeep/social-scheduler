@@ -14,6 +14,7 @@
         </div>
     </div>
 
+    @if($project)
     <div class="row g-3 mb-4">
         <div class="col-md-7">
             <form method="get">
@@ -36,7 +37,7 @@
             <div class="row g-3">
                 <div class="col-md-4">
                     <label class="form-label">Client ID</label>
-                    <input class="form-control" name="credentials[{{ $key }}][client_id]" value="{{ old(" credentials.$key.client_id ", $credential?->client_id) }}">
+                    <input class="form-control" name="credentials[{{ $key }}][client_id]" value="{{ old("credentials.$key.client_id", $credential?->client_id) }}">
                 </div>
                 <div class="col-md-4">
                     <label class="form-label">Client Secret</label>
@@ -44,7 +45,7 @@
                 </div>
                 <div class="col-md-4">
                     <label class="form-label">Redirect URL</label>
-                    <input class="form-control" type="url" name="credentials[{{ $key }}][redirect_uri]" value="{{ old(" credentials.$key.redirect_uri ", $credential?->redirect_uri) }}">
+                    <input class="form-control" type="url" name="credentials[{{ $key }}][redirect_uri]" value="{{ old("credentials.$key.redirect_uri", $credential?->redirect_uri) }}">
                 </div>
                 <div class="col-md-3">
                     <label class="form-label">Status</label>
@@ -58,5 +59,13 @@
         @endforeach
         <button class="btn btn-primary">Save credentials</button>
     </form>
+    @else
+      <div class="alert alert-info">Create a project to configure its social application credentials.</div>
+    @endif
+
+    @if($deletedProjects->isNotEmpty())
+      <div class="border-top mt-4 pt-4"><h2 class="h5">Deleted projects</h2><p class="small text-muted">Restoring a project also restores its connected accounts, pages, credentials, and posts.</p>
+      @foreach($deletedProjects as $deletedProject)<div class="d-flex align-items-center justify-content-between border rounded p-2 mb-2"><span>{{ $deletedProject->name }}</span><div class="d-flex gap-2"><form method="post" action="{{ route('project-settings.restore', $deletedProject->id) }}">@csrf @method('PATCH')<button class="btn btn-sm btn-outline-primary">Restore</button></form>@if(auth()->user()->is_admin)<form method="post" action="{{ route('project-settings.force-destroy', $deletedProject->id) }}">@csrf @method('DELETE')<button class="btn btn-sm btn-outline-danger" data-confirm-delete data-confirm-title="Permanently Delete Project" data-confirm-message="This project and all of its related records will be permanently deleted.">Delete permanently</button></form>@endif</div></div>@endforeach</div>
+    @endif
 </div>
 @endsection

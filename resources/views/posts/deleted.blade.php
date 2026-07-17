@@ -1,0 +1,6 @@
+@extends('layouts.app')
+@section('title', 'Deleted Posts')
+@section('subtitle', 'Restore scheduled posts that were deleted')
+@section('content')
+<div class="panel"><a class="btn btn-sm btn-outline-secondary mb-3" href="{{ route('posts.index') }}">Back to posts</a><div class="table-responsive"><table class="table app-table"><thead><tr><th>Deleted</th><th>Platform</th><th>Caption</th><th></th></tr></thead><tbody>@forelse($posts as $post)<tr><td>{{ $post->deleted_at->timezone(auth()->user()->timezone)->format('M d, Y H:i') }}</td><td>{{ ucfirst($post->platform) }}</td><td>{{ Str::limit($post->message, 100) }}</td><td class="text-end d-flex justify-content-end gap-2"><form method="post" action="{{ route('posts.restore', $post->id) }}">@csrf @method('PATCH')<button class="btn btn-sm btn-primary">Restore</button></form>@if(auth()->user()->is_admin)<form method="post" action="{{ route('posts.force-destroy', $post->id) }}">@csrf @method('DELETE')<button class="btn btn-sm btn-outline-danger" data-confirm-delete data-confirm-title="Permanently Delete Post" data-confirm-message="This post and its media records will be permanently deleted and cannot be restored.">Delete permanently</button></form>@endif</td></tr>@empty<tr><td colspan="4" class="text-muted">No deleted posts.</td></tr>@endforelse</tbody></table></div></div>
+@endsection

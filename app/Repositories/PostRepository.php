@@ -10,6 +10,10 @@ use Illuminate\Database\Eloquent\Collection;
 
 class PostRepository
 {
+    public function deletedForUser(int $userId): Collection
+    {
+        return Post::onlyTrashed()->where('user_id', $userId)->with(['socialPage', 'media'])->latest('deleted_at')->get();
+    }
     public function paginateForUser(int $userId, array $filters = [], int $perPage = 25): LengthAwarePaginator
     {
         return Post::query()

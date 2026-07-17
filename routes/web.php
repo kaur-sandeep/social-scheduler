@@ -51,7 +51,10 @@ Route::middleware('auth')->group(function () {
     Route::get('/tiktok/callback', [TikTokController::class, 'callback'])->name('tiktok.callback');
     Route::post('/tiktok/accounts/{account}/disconnect', [TikTokController::class, 'disconnect'])->name('tiktok.disconnect');
 
-    Route::resource('posts', PostController::class)->only(['index', 'create', 'store', 'destroy']);
+    Route::resource('posts', PostController::class)->only(['index', 'create', 'store', 'edit', 'update', 'destroy']);
+    Route::get('/posts/deleted', [PostController::class, 'deleted'])->name('posts.deleted');
+    Route::patch('/posts/{post}/restore', [PostController::class, 'restore'])->name('posts.restore');
+    Route::delete('/posts/{post}/permanent', [PostController::class, 'forceDestroy'])->name('posts.force-destroy');
     Route::get('/posts/pages', [PostController::class, 'pages'])->name('posts.pages');
     Route::patch('/posts/{post}/move', [PostController::class, 'move'])->name('posts.move');
 
@@ -63,4 +66,6 @@ Route::middleware('auth')->group(function () {
     Route::post('/project-settings/projects', [ProjectSettingsController::class, 'store'])->name('project-settings.store');
     Route::put('/project-settings/{project}', [ProjectSettingsController::class, 'update'])->name('project-settings.update');
     Route::delete('/project-settings/{project}', [ProjectSettingsController::class, 'destroy'])->name('project-settings.destroy');
+    Route::patch('/project-settings/{project}/restore', [ProjectSettingsController::class, 'restore'])->name('project-settings.restore');
+    Route::delete('/project-settings/{project}/permanent', [ProjectSettingsController::class, 'forceDestroy'])->name('project-settings.force-destroy');
 });
