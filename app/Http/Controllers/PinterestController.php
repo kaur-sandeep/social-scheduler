@@ -6,10 +6,11 @@ use App\Models\SocialAccount;
 use App\Services\Social\PinterestService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use App\Services\ProjectCredentialService;
 
 class PinterestController extends Controller
 {
-    public function redirect(PinterestService $pinterest): RedirectResponse { return redirect()->away($pinterest->authorizationUrl()); }
+    public function redirect(Request $request, PinterestService $pinterest, ProjectCredentialService $credentials): RedirectResponse { if ($redirect = $this->selectOAuthProject($request, 'pinterest', $credentials)) return $redirect; return redirect()->away($pinterest->authorizationUrl()); }
     public function callback(Request $request, PinterestService $pinterest): RedirectResponse
     {
         abort_unless(hash_equals((string) session('pinterest_oauth_state'), (string) $request->input('state')), 419);

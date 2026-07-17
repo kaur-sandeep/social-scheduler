@@ -10,7 +10,7 @@ class SocialAccount extends Model
     use SoftDeletes;
 
     protected $fillable = [
-        'user_id', 'provider', 'provider_user_id', 'provider_username', 'name', 'email',
+        'project_id', 'user_id', 'provider', 'provider_user_id', 'provider_username', 'name', 'email',
         'user_access_token', 'refresh_token', 'token_expires_at', 'status',
         'connected_at', 'disconnected_at',
     ];
@@ -30,6 +30,8 @@ class SocialAccount extends Model
     {
         return $this->belongsTo(User::class);
     }
+
+    public function project() { return $this->belongsTo(Project::class); }
 
     public function pages()
     {

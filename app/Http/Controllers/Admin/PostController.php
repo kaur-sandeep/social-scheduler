@@ -7,6 +7,8 @@ use App\Http\Requests\MovePostRequest;
 use App\Http\Requests\StorePostRequest;
 use App\Models\Post;
 use App\Models\SocialPage;
+use App\Repositories\ProjectRepository;
+use App\Repositories\SocialAccountRepository;
 use App\Repositories\PostRepository;
 use App\Services\PostService;
 use App\Services\SchedulerService;
@@ -23,15 +25,20 @@ class PostController extends Controller
         ]);
     }
 
-    public function create(): View
+    public function create(ProjectRepository $projects): View
     {
+        $project = $projects->findForUser(request()->user(), (int) request('project_id')) ?? $projects->projectsFor(request()->user())->first();
         return view('posts.create', [
-            'pages' => SocialPage::query()
-                ->whereHas('account', fn ($query) => $query->where('user_id', auth()->id())->where('status', 'active'))
-                ->orderBy('provider')
-                ->orderBy('page_name')
-                ->get(),
+            'projects' => $projects->projectsFor(request()->user()),
+            'project' => $project,
+            'pages' => $project ? SocialPage::query()->whereHas('account', fn ($query) => $query->where('user_id', auth()->id())->where('project_id', $project->id)->where('status', 'active'))->orderBy('provider')->orderBy('page_name')->get() : collect(),
         ]);
+    }
+
+    public function pages(\Illuminate\Http\Request $request, \App\Repositories\SocialAccountRepository $accounts): JsonResponse
+    {
+        abort_unless(\App\Models\Project::whereKey($request->integer('project_id'))->where('user_id', $request->user()->id)->exists(), 404);
+        return response()->json($accounts->activePagesForProject($request->user()->id, $request->integer('project_id'))->map(fn ($page) => ['id' => $page->id, 'provider' => $page->provider, 'name' => $page->page_name]));
     }
 
     public function store(StorePostRequest $request, PostService $service, SchedulerService $scheduler): RedirectResponse

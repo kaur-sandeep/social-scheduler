@@ -6,10 +6,11 @@ use App\Models\SocialAccount;
 use App\Services\Social\LinkedInService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use App\Services\ProjectCredentialService;
 
 class LinkedInController extends Controller
 {
-    public function redirect(LinkedInService $linkedin): RedirectResponse { return redirect()->away($linkedin->authorizationUrl()); }
+    public function redirect(Request $request, LinkedInService $linkedin, ProjectCredentialService $credentials): RedirectResponse { if ($redirect = $this->selectOAuthProject($request, 'linkedin', $credentials)) return $redirect; return redirect()->away($linkedin->authorizationUrl()); }
     public function callback(Request $request, LinkedInService $linkedin): RedirectResponse
     {
         abort_unless(hash_equals((string) session('linkedin_oauth_state'), (string) $request->input('state')), 419);

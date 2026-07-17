@@ -14,6 +14,7 @@ use App\Http\Controllers\LinkedInController;
 use App\Http\Controllers\TwitterController;
 use App\Http\Controllers\PinterestController;
 use App\Http\Controllers\TikTokController;
+use App\Http\Controllers\Admin\ProjectSettingsController;
 
 Route::get('/', function () {
     return auth()->check() ? redirect()->route('dashboard') : view('welcome');
@@ -51,10 +52,15 @@ Route::middleware('auth')->group(function () {
     Route::post('/tiktok/accounts/{account}/disconnect', [TikTokController::class, 'disconnect'])->name('tiktok.disconnect');
 
     Route::resource('posts', PostController::class)->only(['index', 'create', 'store', 'destroy']);
+    Route::get('/posts/pages', [PostController::class, 'pages'])->name('posts.pages');
     Route::patch('/posts/{post}/move', [PostController::class, 'move'])->name('posts.move');
 
     Route::get('/logs', [LogController::class, 'index'])->name('logs.index');
     Route::view('/analytics', 'analytics.index')->name('analytics.index');
     Route::view('/media-library', 'media.index')->name('media.index');
     Route::get('/settings', [SettingsController::class, 'index'])->name('settings.index');
+    Route::get('/project-settings', [ProjectSettingsController::class, 'index'])->name('project-settings.index');
+    Route::post('/project-settings/projects', [ProjectSettingsController::class, 'store'])->name('project-settings.store');
+    Route::put('/project-settings/{project}', [ProjectSettingsController::class, 'update'])->name('project-settings.update');
+    Route::delete('/project-settings/{project}', [ProjectSettingsController::class, 'destroy'])->name('project-settings.destroy');
 });

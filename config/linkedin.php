@@ -6,5 +6,5 @@ return [
     'redirect_uri' => env('LINKEDIN_REDIRECT_URI'),
     'api_url' => env('LINKEDIN_API_URL', 'https://api.linkedin.com'),
     'version' => env('LINKEDIN_API_VERSION', '202606'),
-    'scopes' => ['openid', 'profile', 'email', 'w_member_social', 'offline_access'],
+    'scopes' => ['openid', 'profile', 'email', 'w_member_social'],
 ];

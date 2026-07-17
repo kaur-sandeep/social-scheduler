@@ -6,11 +6,13 @@ use App\Models\SocialAccount;
 use App\Services\Social\TikTokService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use App\Services\ProjectCredentialService;
 
 class TikTokController extends Controller
 {
-    public function redirect(TikTokService $tiktok): RedirectResponse
+    public function redirect(Request $request, TikTokService $tiktok, ProjectCredentialService $credentials): RedirectResponse
     {
+        if ($redirect = $this->selectOAuthProject($request, 'tiktok', $credentials)) return $redirect;
         return redirect()->away($tiktok->authorizationUrl());
     }
 

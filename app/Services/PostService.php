@@ -25,6 +25,7 @@ class PostService
             $scheduledAt = $this->scheduledAt($data);
 
             $post = Post::query()->create([
+                'project_id' => $data['project_id'],
                 'user_id' => $user->id,
                 'social_page_id' => $data['social_page_id'] ?? null,
                 'platform' => $data['platform'],

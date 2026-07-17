@@ -47,6 +47,13 @@
                 </div>
 
                 <label class="form-label">Platform</label>
+                <label class="form-label">Project</label>
+                <select class="form-select" name="project_id" id="project_id" required>
+                    <option value="">Select project</option>
+                    @foreach($projects as $item)<option value="{{ $item->id }}" @selected(old('project_id', $project?->id) === $item->id)>{{ $item->name }}</option>@endforeach
+                </select>
+
+                <label class="form-label mt-3">Platform</label>
                 <select class="form-select" name="platform" required>
                     @foreach(['facebook','instagram','linkedin','tiktok','twitter','pinterest','youtube'] as $provider)
                         <option value="{{ $provider }}">{{ ucfirst($provider) }}</option>
@@ -85,3 +92,14 @@
     </div>
 </form>
 @endsection
+
+@push('scripts')
+<script>
+document.getElementById('project_id').addEventListener('change', async function () {
+ const target = document.querySelector('[name="social_page_id"]'); target.innerHTML = '<option value="">Loading profiles/pages…</option>';
+ const response = await fetch(`{{ route('posts.pages') }}?project_id=${encodeURIComponent(this.value)}`, {headers:{Accept:'application/json'}});
+ const pages = response.ok ? await response.json() : [];
+ target.innerHTML = '<option value="">Select profile/page</option>' + pages.map(page => `<option value="${page.id}">${page.provider.charAt(0).toUpperCase()+page.provider.slice(1)} - ${page.name}</option>`).join('');
+});
+</script>
+@endpush

@@ -5,6 +5,7 @@ namespace App\Services\Social;
 use App\Models\Post;
 use App\Models\SocialAccount;
 use App\Repositories\SocialAccountRepository;
+use App\Services\ProjectCredentialService;
 use Illuminate\Http\Client\PendingRequest;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Http;
@@ -17,19 +18,20 @@ class FacebookService
 {
     private string $baseUrl;
 
-    public function __construct(private readonly SocialAccountRepository $accounts)
+    public function __construct(private readonly SocialAccountRepository $accounts, private readonly ProjectCredentialService $credentials)
     {
         $this->baseUrl = 'https://graph.facebook.com/'.config('facebook.graph_version');
     }
 
     public function authorizationUrl(): string
     {
+        $credential = $this->credentials->fromSession('facebook');
         $state = Str::random(40);
         session(['facebook_oauth_state' => $state]);
 
         return 'https://www.facebook.com/'.config('facebook.graph_version').'/dialog/oauth?'.http_build_query([
-            'client_id' => config('facebook.app_id'),
-            'redirect_uri' => config('facebook.redirect_uri') ?: URL::route('facebook.callback'),
+            'client_id' => $credential->client_id,
+            'redirect_uri' => $credential->redirect_uri ?: URL::route('facebook.callback'),
             'scope' => implode(',', config('facebook.scopes')),
             'response_type' => 'code',
             'state' => $state,
@@ -202,20 +204,22 @@ class FacebookService
 
     private function exchangeCode(string $code): array
     {
+        $credential = $this->credentials->fromSession('facebook');
         return $this->get('/oauth/access_token', [
-            'client_id' => config('facebook.app_id'),
-            'redirect_uri' => config('facebook.redirect_uri') ?: URL::route('facebook.callback'),
-            'client_secret' => config('facebook.app_secret'),
+            'client_id' => $credential->client_id,
+            'redirect_uri' => $credential->redirect_uri ?: URL::route('facebook.callback'),
+            'client_secret' => $credential->client_secret,
             'code' => $code,
         ]);
     }
 
     private function exchangeForLongLivedToken(string $token): array
     {
+        $credential = $this->credentials->fromSession('facebook');
         return $this->get('/oauth/access_token', [
             'grant_type' => 'fb_exchange_token',
-            'client_id' => config('facebook.app_id'),
-            'client_secret' => config('facebook.app_secret'),
+            'client_id' => $credential->client_id,
+            'client_secret' => $credential->client_secret,
             'fb_exchange_token' => $token,
         ]);
     }

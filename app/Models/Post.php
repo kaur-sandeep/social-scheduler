@@ -11,7 +11,7 @@ class Post extends Model
     use SoftDeletes;
 
     protected $fillable = [
-        'user_id', 'social_page_id', 'platform', 'message', 'status', 'scheduled_date',
+        'project_id', 'user_id', 'social_page_id', 'platform', 'message', 'status', 'scheduled_date',
         'scheduled_time', 'scheduled_at', 'timezone', 'published_at', 'provider_post_id',
         'error_message', 'retry_count', 'created_by', 'updated_by',
     ];
@@ -30,6 +30,8 @@ class Post extends Model
     {
         return $this->belongsTo(User::class);
     }
+
+    public function project() { return $this->belongsTo(Project::class); }
 
     public function socialPage()
     {

@@ -6,11 +6,14 @@ use App\Http\Requests\FacebookCallbackRequest;
 use App\Models\SocialAccount;
 use App\Services\Social\FacebookService;
 use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\Request;
+use App\Services\ProjectCredentialService;
 
 class FacebookController extends Controller
 {
-    public function redirect(FacebookService $facebook): RedirectResponse
+    public function redirect(Request $request, FacebookService $facebook, ProjectCredentialService $credentials): RedirectResponse
     {
+        if ($redirect = $this->selectOAuthProject($request, 'facebook', $credentials)) return $redirect;
         return redirect()->away($facebook->authorizationUrl());
     }
 

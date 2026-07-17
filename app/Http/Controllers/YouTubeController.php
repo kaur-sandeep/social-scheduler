@@ -6,10 +6,11 @@ use App\Models\SocialAccount;
 use App\Services\Social\YouTubeService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use App\Services\ProjectCredentialService;
 
 class YouTubeController extends Controller
 {
-    public function redirect(YouTubeService $youtube): RedirectResponse { return redirect()->away($youtube->authorizationUrl()); }
+    public function redirect(Request $request, YouTubeService $youtube, ProjectCredentialService $credentials): RedirectResponse { if ($redirect = $this->selectOAuthProject($request, 'youtube', $credentials)) return $redirect; return redirect()->away($youtube->authorizationUrl()); }
     public function callback(Request $request, YouTubeService $youtube): RedirectResponse
     {
         $request->validate(['code' => ['required_without:error', 'string'], 'state' => ['required', 'string'], 'error' => ['nullable', 'string']]);
