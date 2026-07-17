@@ -17,11 +17,22 @@ class PostRepository
     public function paginateForUser(int $userId, array $filters = [], int $perPage = 25): LengthAwarePaginator
     {
         return Post::query()
-            ->with(['socialPage', 'media'])
+            ->with(['socialPage', 'media', 'project'])
             ->where('user_id', $userId)
             ->when($filters['platform'] ?? null, fn ($query, $platform) => $query->where('platform', $platform))
             ->when($filters['status'] ?? null, fn ($query, $status) => $query->where('status', $status))
-            ->latest('scheduled_at')
+            ->when($filters['q'] ?? null, function ($query, $search): void {
+                $search = trim($search);
+
+                $query->where(function ($query) use ($search): void {
+                    $query->when(ctype_digit($search), fn ($query) => $query->orWhereKey((int) $search))
+                        ->orWhere('message', 'like', "%{$search}%")
+                        ->orWhere('platform', 'like', "%{$search}%")
+                        ->orWhereHas('socialPage', fn ($query) => $query->where('page_name', 'like', "%{$search}%"))
+                        ->orWhereHas('project', fn ($query) => $query->where('name', 'like', "%{$search}%"));
+                });
+            })
+            ->orderByDesc('id')
             ->paginate($perPage)
             ->withQueryString();
     }

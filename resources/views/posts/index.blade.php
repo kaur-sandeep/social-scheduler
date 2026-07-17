@@ -5,13 +5,21 @@
 
 @section('content')
 <div class="panel">
-    <div class="text-end mb-3"><a class="btn btn-sm btn-outline-secondary" href="{{ route('posts.deleted') }}">View deleted posts</a></div>
+    <div class="d-flex flex-wrap gap-3 justify-content-between align-items-center mb-3">
+        <form method="get" action="{{ route('posts.index') }}" class="post-search" id="post-search-form">
+            <i class="bi bi-search"></i>
+            <input type="search" name="q" id="post-search" value="{{ request('q') }}" placeholder="Search by ID, caption, platform, page or project" autocomplete="off">
+            @if(request('q'))<a href="{{ route('posts.index') }}" class="btn btn-sm btn-link text-decoration-none">Clear</a>@endif
+        </form>
+        <a class="btn btn-sm btn-outline-secondary" href="{{ route('posts.deleted') }}">View deleted posts</a>
+    </div>
     <div class="table-responsive">
         <table class="table app-table align-middle">
-            <thead><tr><th>Scheduled</th><th>Platform</th><th>Page</th><th>Status</th><th>Caption</th><th></th></tr></thead>
+            <thead><tr><th>ID <i class="bi bi-arrow-down short-muted" title="Newest first"></i></th><th>Scheduled</th><th>Platform</th><th>Page</th><th>Status</th><th>Caption</th><th></th></tr></thead>
             <tbody>
             @forelse($posts as $post)
                 <tr>
+                    <td class="text-muted">#{{ $post->id }}</td>
                     <td>
                         @if($post->scheduled_at)
                             {{ $post->scheduled_at->timezone(auth()->user()->timezone)->format('M d, Y H:i') }}
@@ -38,7 +46,7 @@
                     </td>
                 </tr>
             @empty
-                <tr><td colspan="6" class="text-muted">No posts created yet.</td></tr>
+                <tr><td colspan="7" class="text-muted">No posts match your search.</td></tr>
             @endforelse
             </tbody>
         </table>
@@ -46,3 +54,14 @@
     {{ $posts->links() }}
 </div>
 @endsection
+
+@push('scripts')
+<script>
+const searchInput = document.getElementById('post-search');
+let searchTimer;
+searchInput?.addEventListener('input', () => {
+    clearTimeout(searchTimer);
+    searchTimer = setTimeout(() => document.getElementById('post-search-form').submit(), 350);
+});
+</script>
+@endpush

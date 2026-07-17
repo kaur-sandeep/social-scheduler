@@ -21,7 +21,7 @@ class PostController extends Controller
     public function index(PostRepository $posts): View
     {
         return view('posts.index', [
-            'posts' => $posts->paginateForUser(auth()->id(), request()->only(['platform', 'status'])),
+            'posts' => $posts->paginateForUser(auth()->id(), request()->only(['platform', 'status', 'q'])),
         ]);
     }
 
