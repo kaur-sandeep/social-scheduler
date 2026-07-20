@@ -628,3 +628,6 @@ body {
     outline: 0;
     width: 100%;
 }
+
+#post-results { transition: opacity .15s ease; }
+#post-results.post-results-loading { opacity: .45; pointer-events: none; }

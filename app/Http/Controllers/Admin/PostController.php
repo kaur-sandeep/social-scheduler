@@ -18,11 +18,15 @@ use Illuminate\View\View;
 
 class PostController extends Controller
 {
-    public function index(PostRepository $posts): View
+    public function index(PostRepository $posts): View|JsonResponse
     {
-        return view('posts.index', [
-            'posts' => $posts->paginateForUser(auth()->id(), request()->only(['platform', 'status', 'q'])),
-        ]);
+        $posts = $posts->paginateForUser(auth()->id(), request()->only(['platform', 'status', 'q']));
+
+        if (request()->expectsJson()) {
+            return response()->json(['html' => view('posts.partials.results', compact('posts'))->render()]);
+        }
+
+        return view('posts.index', compact('posts'));
     }
 
     public function create(ProjectRepository $projects): View
