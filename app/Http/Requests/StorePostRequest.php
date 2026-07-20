@@ -4,7 +4,9 @@ namespace App\Http\Requests;
 
 use App\Enums\SocialProvider;
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Support\Carbon;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\Validator;
 use App\Models\SocialPage;
 use App\Models\Project;
 
@@ -20,7 +22,7 @@ class StorePostRequest extends FormRequest
         return [
             'project_id' => ['required', 'integer', function (string $attribute, mixed $value, \Closure $fail): void { if (! Project::where('id', $value)->where('user_id', $this->user()->id)->exists()) $fail('Choose one of your projects.'); }],
             'platform' => ['required', Rule::enum(SocialProvider::class)],
-            'social_page_id' => ['nullable', 'exists:social_pages,id', 'required_if:action,schedule', 'required_if:action,publish', function (string $attribute, mixed $value, \Closure $fail): void {
+            'social_page_id' => ['required', 'exists:social_pages,id', function (string $attribute, mixed $value, \Closure $fail): void {
                 if (! $value) return;
                 $page = SocialPage::query()->whereKey($value)->whereHas('account', fn ($query) => $query->where('user_id', $this->user()->id)->where('project_id', $this->input('project_id')))->first();
                 if (! $page) { $fail('Choose a destination connected to your account.'); return; }
@@ -38,5 +40,25 @@ class StorePostRequest extends FormRequest
             'media' => ['nullable', 'array', 'max:'.config('social.max_media_files')],
             'media.*' => ['file', 'mimes:jpg,jpeg,png,webp,gif,mp4,mov,avi,webm', 'max:'.config('social.max_upload_kilobytes')],
         ];
+    }
+
+    public function withValidator(Validator $validator): void
+    {
+        $validator->after(function (Validator $validator): void {
+            if ($this->input('action') !== 'schedule' || $validator->errors()->hasAny(['scheduled_date', 'scheduled_time', 'timezone'])) {
+                return;
+            }
+
+            try {
+                $timezone = $this->input('timezone');
+                $scheduledAt = Carbon::createFromFormat('!Y-m-d H:i', $this->input('scheduled_date').' '.$this->input('scheduled_time'), $timezone);
+
+                if ($scheduledAt->lessThanOrEqualTo(now($timezone))) {
+                    $validator->errors()->add('scheduled_time', 'You cannot schedule a post in the past. Please select a future date and time.');
+                }
+            } catch (\Throwable) {
+                // The individual field rules provide the appropriate error message.
+            }
+        });
     }
 }

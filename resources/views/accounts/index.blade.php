@@ -4,6 +4,17 @@
 @section('subtitle', 'Connected social accounts and managed pages')
 
 @section('content')
+@php
+    $providers = [
+        'facebook' => ['label' => 'Facebook', 'icon' => 'bi-facebook', 'class' => 'btn-primary'],
+        'youtube' => ['label' => 'YouTube', 'icon' => 'bi-youtube', 'class' => 'btn-danger'],
+        'linkedin' => ['label' => 'LinkedIn', 'icon' => 'bi-linkedin', 'class' => 'btn-primary'],
+        'twitter' => ['label' => 'X', 'icon' => 'bi-twitter-x', 'class' => 'btn-dark'],
+        'pinterest' => ['label' => 'Pinterest', 'icon' => 'bi-pinterest', 'class' => 'btn-danger'],
+        'tiktok' => ['label' => 'TikTok', 'icon' => 'bi-tiktok', 'class' => 'btn-dark'],
+    ];
+    $connectedProviders = $accounts->where('status', 'active')->pluck('provider')->unique();
+@endphp
 <div class="panel mb-4">
     <form method="get" class="mb-3"><label class="form-label">Project</label><select class="form-select" name="project_id" onchange="this.form.submit()">@foreach($projects as $item)<option value="{{ $item->id }}" @selected($item->id === $project?->id)>{{ $item->name }}</option>@endforeach</select></form>
     <div class="panel-header">
@@ -12,12 +23,17 @@
             <p>Connect channels and sync managed pages</p>
         </div>
         <div class="d-flex gap-2">
-            <a class="btn btn-sm btn-primary" href="{{ route('facebook.redirect', ['project_id' => $project?->id]) }}"><i class="bi bi-facebook"></i> Connect Facebook</a>
-            <a class="btn btn-sm btn-danger" href="{{ route('youtube.redirect', ['project_id' => $project?->id]) }}"><i class="bi bi-youtube"></i> Connect YouTube</a>
-            <a class="btn btn-sm btn-primary" href="{{ route('linkedin.redirect', ['project_id' => $project?->id]) }}"><i class="bi bi-linkedin"></i> Connect LinkedIn</a>
-            <a class="btn btn-sm btn-dark" href="{{ route('twitter.redirect', ['project_id' => $project?->id]) }}">Connect X</a>
-            <a class="btn btn-sm btn-danger" href="{{ route('pinterest.redirect', ['project_id' => $project?->id]) }}"><i class="bi bi-pinterest"></i> Connect Pinterest</a>
-            <a class="btn btn-sm btn-dark" href="{{ route('tiktok.redirect', ['project_id' => $project?->id]) }}">Connect TikTok</a>
+            @foreach($providers as $provider => $details)
+                @if($connectedProviders->contains($provider))
+                    <button class="btn btn-sm {{ $details['class'] }}" type="button" disabled title="{{ $details['label'] }} is already connected to this project">
+                        <i class="bi {{ $details['icon'] }}"></i> {{ $details['label'] }} connected
+                    </button>
+                @else
+                    <a class="btn btn-sm {{ $details['class'] }}" href="{{ route($provider.'.redirect', ['project_id' => $project?->id]) }}">
+                        <i class="bi {{ $details['icon'] }}"></i> Connect {{ $details['label'] }}
+                    </a>
+                @endif
+            @endforeach
         </div>
     </div>
 </div>
@@ -26,7 +42,7 @@
     <div class="panel mb-3">
         <div class="panel-header">
             <div>
-                <h2>{{ $account->name }} <span class="badge status-badge">{{ $account->status }}</span></h2>
+                <h2><i class="bi {{ $providers[$account->provider]['icon'] ?? 'bi-share-fill' }} account-provider-icon" aria-hidden="true"></i> {{ $account->name }} <span class="badge status-badge">{{ $account->status }}</span></h2>
                 <p>{{ ucfirst($account->provider) }} account connected {{ optional($account->connected_at)->diffForHumans() }}</p>
             </div>
             <form method="post" action="{{ route($account->provider.'.disconnect', $account) }}">

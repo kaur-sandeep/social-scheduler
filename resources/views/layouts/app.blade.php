@@ -31,10 +31,11 @@
         <div class="sidebar-section">Administration</div>
         <nav class="nav flex-column gap-1">
             <a class="nav-link {{ request()->routeIs('accounts.*') ? 'active' : '' }}" href="{{ route('accounts.index') }}"><i class="bi bi-person-badge"></i> Accounts</a>
-            <a class="nav-link {{ request()->routeIs('logs.*') ? 'active' : '' }}" href="{{ route('logs.index') }}"><i class="bi bi-terminal"></i> Logs</a>
             <!-- <a class="nav-link {{ request()->routeIs('media.*') ? 'active' : '' }}" href="{{ route('media.index') }}"><i class="bi bi-images"></i> Media Library</a>
             <a class="nav-link {{ request()->routeIs('settings.*') ? 'active' : '' }}" href="{{ route('settings.index') }}"><i class="bi bi-gear"></i> Settings</a> -->
             <a class="nav-link {{ request()->routeIs('project-settings.*') ? 'active' : '' }}" href="{{ route('project-settings.index') }}"><i class="bi bi-sliders"></i> Project Settings</a>
+            <a class="nav-link {{ request()->routeIs('logs.*') ? 'active' : '' }}" href="{{ route('logs.index') }}"><i class="bi bi-terminal"></i> Logs</a>
+           
         </nav>
         <div class="sidebar-footer">
             <span class="status-pill"></span>

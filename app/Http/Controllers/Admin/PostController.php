@@ -31,7 +31,8 @@ class PostController extends Controller
 
     public function create(ProjectRepository $projects): View
     {
-        $project = $projects->findForUser(request()->user(), (int) request('project_id')) ?? $projects->projectsFor(request()->user())->first();
+        $projectId = (int) old('project_id', request('project_id'));
+        $project = $projects->findForUser(request()->user(), $projectId) ?? $projects->projectsFor(request()->user())->first();
         return view('posts.create', [
             'projects' => $projects->projectsFor(request()->user()),
             'project' => $project,
