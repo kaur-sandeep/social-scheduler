@@ -6,10 +6,12 @@ document.addEventListener('DOMContentLoaded', () => {
     const title = document.getElementById('postModalTitle');
     const body = document.getElementById('postModalBody');
     const platformFilter = document.getElementById('platformFilter');
+    const projectFilter = document.getElementById('projectFilter');
     const statusFilter = document.getElementById('statusFilter');
 
     const calendar = new FullCalendar.Calendar(el, {
         initialView: 'dayGridMonth',
+        eventDisplay: 'block',
         height: 'auto',
         editable: true,
         nowIndicator: true,
@@ -23,6 +25,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 start: info.startStr,
                 end: info.endStr,
                 platform: platformFilter.value,
+                project: projectFilter.value,
                 status: statusFilter.value
             });
 
@@ -30,6 +33,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 .then(response => response.json())
                 .then(success)
                 .catch(failure);
+        },
+        eventClassNames(info) {
+            return ['calendar-event', `calendar-status-${info.event.extendedProps.status || 'draft'}`];
         },
         eventClick(info) {
             const props = info.event.extendedProps;
@@ -39,11 +45,32 @@ document.addEventListener('DOMContentLoaded', () => {
                 <dl class="row mb-0">
                     <dt class="col-4">Platform</dt><dd class="col-8">${props.platform}</dd>
                     <dt class="col-4">Page</dt><dd class="col-8">${props.page || 'Profile'}</dd>
+                    <dt class="col-4">Project</dt><dd class="col-8">${props.project || '-'}</dd>
                     <dt class="col-4">Status</dt><dd class="col-8">${props.status}</dd>
                     <dt class="col-4">Caption</dt><dd class="col-8">${props.caption}</dd>
                 </dl>
             `;
             modal.show();
+        },
+        eventDidMount(info) {
+            const props = info.event.extendedProps;
+            const statusColors = {
+                draft: ['#ffedd5', '#c2410c'],
+                pending: ['#fee2e2', '#b42318'],
+                queued: ['#fee2e2', '#b42318'],
+                retrying: ['#fee2e2', '#b42318'],
+                published: ['#dcfae6', '#087443'],
+                failed: ['#fef3f2', '#b42318'],
+                cancelled: ['#fef3f2', '#b42318'],
+                publishing: ['#e0f2fe', '#0369a1'],
+            };
+            const [background, foreground] = statusColors[props.status] || ['#64748b', '#ffffff'];
+            const eventParts = [info.el, ...info.el.querySelectorAll('.fc-event-main, .fc-event-main-frame, .fc-event-title-container, .fc-event-title, .fc-event-time')];
+            eventParts.forEach(part => {
+                part.style.setProperty('background-color', background, 'important');
+                part.style.setProperty('color', foreground, 'important');
+            });
+            info.el.title = `${props.project || 'No project'} · ${props.status} · ${props.caption || ''}`;
         },
         eventDrop(info) {
             movePost(info.event);
@@ -70,6 +97,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     platformFilter.addEventListener('change', () => calendar.refetchEvents());
+    projectFilter.addEventListener('change', () => calendar.refetchEvents());
     statusFilter.addEventListener('change', () => calendar.refetchEvents());
     calendar.render();
 });

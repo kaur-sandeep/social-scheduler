@@ -20,13 +20,16 @@ class PostController extends Controller
 {
     public function index(PostRepository $posts): View|JsonResponse
     {
-        $posts = $posts->paginateForUser(auth()->id(), request()->only(['platform', 'status', 'q']));
+        $posts = $posts->paginateForUser(auth()->id(), request()->only(['platform', 'project', 'status', 'date_from', 'date_to', 'q', 'sort', 'direction']));
 
         if (request()->expectsJson()) {
             return response()->json(['html' => view('posts.partials.results', compact('posts'))->render()]);
         }
 
-        return view('posts.index', compact('posts'));
+        return view('posts.index', [
+            'posts' => $posts,
+            'projects' => app(ProjectRepository::class)->projectsFor(request()->user()),
+        ]);
     }
 
     public function create(ProjectRepository $projects): View

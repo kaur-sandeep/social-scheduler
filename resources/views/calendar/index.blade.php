@@ -8,8 +8,12 @@
 @endpush
 
 @section('content')
-<div class="panel">
+<div class="panel calendar-panel">
     <div class="calendar-toolbar">
+        <select id="projectFilter" class="form-select form-select-sm" aria-label="Filter by project">
+            <option value="">All projects</option>
+            @foreach($projects as $project)<option value="{{ $project->id }}">{{ $project->name }}</option>@endforeach
+        </select>
         <select id="platformFilter" class="form-select form-select-sm">
             <option value="">All platforms</option>
             @foreach(['facebook','instagram','linkedin','tiktok','twitter','pinterest','youtube'] as $provider)
@@ -23,6 +27,7 @@
             @endforeach
         </select>
     </div>
+    <div class="calendar-legend" aria-label="Post status legend"><span class="status-badge status-draft">Draft</span><span class="status-badge status-pending">Pending</span><span class="status-badge status-published">Published</span><span class="status-badge status-failed">Failed</span></div>
     <div id="schedulerCalendar" data-events-url="{{ route('calendar.events') }}"></div>
 </div>
 
@@ -44,5 +49,5 @@
 
 @push('scripts')
 <script src="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.15/index.global.min.js"></script>
-<script src="{{ asset('js/social-calendar.js') }}"></script>
+<script src="{{ asset('js/social-calendar.js') }}?v={{ filemtime(public_path('js/social-calendar.js')) }}"></script>
 @endpush
