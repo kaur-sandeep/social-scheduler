@@ -4,6 +4,7 @@ namespace App\Jobs;
 
 use App\Enums\PostStatus;
 use App\Models\Post;
+use App\Services\NotificationService;
 use App\Services\Social\TikTokService;
 use RuntimeException;
 
@@ -11,10 +12,10 @@ class PublishTikTokPost extends PublishSocialPost
 {
     public function __construct(public Post $post) {}
 
-    public function handle(TikTokService $tiktok): void
+    public function handle(NotificationService $notifications): void
     {
         $this->post->update(['status' => PostStatus::Publishing]);
-        $response = $tiktok->publish($this->post->fresh(['socialPage.account', 'media', 'user']));
+        $response = app(TikTokService::class)->publish($this->post->fresh(['socialPage.account', 'media', 'user']));
         $publishId = (string) data_get($response, 'data.publish_id');
 
         if ($publishId === '') throw new RuntimeException('TikTok did not return a publish ID.');

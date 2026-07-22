@@ -15,7 +15,9 @@ abstract class LoggedHttpClient
         $http = Http::acceptJson()->timeout(60)->withHeaders($headers);
         $response = strtoupper($method) === 'GET'
             ? $http->get($url, $payload)
-            : ($asForm ? $http->asForm()->send($method, $url, ['form_params' => $payload]) : $http->send($method, $url, ['json' => $payload]));
+            : ($asForm
+                ? $http->asForm()->send($method, $url, ['form_params' => $payload])
+                : $http->send($method, $url, $payload === [] ? [] : ['json' => $payload]));
         $body = $response->json() ?? ['body' => $response->body()];
 
         $post->logs()->create([

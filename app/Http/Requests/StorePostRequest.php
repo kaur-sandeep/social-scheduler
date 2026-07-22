@@ -37,6 +37,7 @@ class StorePostRequest extends FormRequest
             'scheduled_time' => ['nullable', 'date_format:H:i', 'required_if:action,schedule'],
             'timezone' => ['required', 'timezone'],
             'action' => ['required', Rule::in(['draft', 'schedule', 'publish'])],
+            'content_type' => ['nullable', 'required_if:platform,instagram', Rule::in(['image', 'carousel', 'reel'])],
             'media' => ['nullable', 'array', 'max:'.config('social.max_media_files')],
             'media.*' => ['file', 'mimes:jpg,jpeg,png,webp,gif,mp4,mov,avi,webm', 'max:'.config('social.max_upload_kilobytes')],
         ];
@@ -45,6 +46,34 @@ class StorePostRequest extends FormRequest
     public function withValidator(Validator $validator): void
     {
         $validator->after(function (Validator $validator): void {
+            if ($this->input('platform') === 'instagram' && ! $validator->errors()->has('content_type')) {
+                $media = $this->file('media', []);
+                $contentType = $this->input('content_type');
+                $isImage = fn ($file): bool => in_array($file->getMimeType(), ['image/jpeg', 'image/png'], true);
+                $isVideo = fn ($file): bool => in_array($file->getMimeType(), ['video/mp4', 'video/quicktime'], true);
+
+                if ($contentType === 'image' && (count($media) !== 1 || ! $isImage($media[0]))) {
+                    $validator->errors()->add('media', 'An Instagram image post requires exactly one JPEG or PNG image.');
+                }
+
+                if ($contentType === 'reel' && (count($media) !== 1 || ! $isVideo($media[0]))) {
+                    $validator->errors()->add('media', 'An Instagram reel requires exactly one MP4 or MOV video.');
+                }
+
+                if ($contentType === 'carousel' && (count($media) < 2 || count($media) > 10 || collect($media)->contains(fn ($file) => ! $isImage($file) && ! $isVideo($file)))) {
+                    $validator->errors()->add('media', 'An Instagram carousel requires 2 to 10 JPEG, PNG, MP4, or MOV files.');
+                }
+            }
+
+            if ($this->input('platform') === 'tiktok') {
+                $media = $this->file('media', []);
+                $isTikTokVideo = fn ($file): bool => in_array($file->getMimeType(), ['video/mp4', 'video/quicktime', 'video/webm'], true);
+
+                if (count($media) !== 1 || ! $isTikTokVideo($media[0])) {
+                    $validator->errors()->add('media', 'A TikTok post requires exactly one MP4, MOV, or WebM video.');
+                }
+            }
+
             if ($this->input('action') !== 'schedule' || $validator->errors()->hasAny(['scheduled_date', 'scheduled_time', 'timezone'])) {
                 return;
             }

@@ -5,6 +5,7 @@ namespace App\Services\Social;
 use App\Models\Post;
 use App\Models\SocialAccount;
 use App\Repositories\SocialAccountRepository;
+use App\Services\ProjectCredentialService;
 use App\Services\Social\Clients\TikTokClient;
 use App\Services\Social\Concerns\InteractsWithPosts;
 use Illuminate\Support\Facades\Http;
@@ -15,24 +16,28 @@ use RuntimeException;
 class TikTokService
 {
     use InteractsWithPosts;
-    public function __construct(private readonly TikTokClient $client, private readonly SocialAccountRepository $accounts) {}
+    public function __construct(
+        private readonly TikTokClient $client,
+        private readonly SocialAccountRepository $accounts,
+        private readonly ProjectCredentialService $credentials,
+    ) {}
 
     public function authorizationUrl(): string
     {
-        $this->assertConfigured();
+        $credential = $this->credentials->fromSession('tiktok');
         $state = Str::random(40);
         session(['tiktok_oauth_state' => $state]);
 
         return 'https://www.tiktok.com/v2/auth/authorize/?'.http_build_query([
-            'client_key' => config('tiktok.client_key'), 'response_type' => 'code',
-            'scope' => implode(',', config('tiktok.scopes')), 'redirect_uri' => $this->redirectUri(), 'state' => $state,
+            'client_key' => $credential->client_id, 'response_type' => 'code',
+            'scope' => implode(',', config('tiktok.scopes')), 'redirect_uri' => $this->redirectUri($credential->redirect_uri), 'state' => $state,
         ]);
     }
 
     public function connect(int $userId, string $code): SocialAccount
     {
-        $this->assertConfigured();
-        $token = $this->token(['grant_type' => 'authorization_code', 'code' => $code, 'redirect_uri' => $this->redirectUri()]);
+        $credential = $this->credentials->fromSession('tiktok');
+        $token = $this->token($credential->client_id, $credential->client_secret, ['grant_type' => 'authorization_code', 'code' => $code, 'redirect_uri' => $this->redirectUri($credential->redirect_uri)]);
         $profile = $this->profile($token['access_token']);
         $identity = (string) ($token['open_id'] ?? data_get($profile, 'data.open_id') ?? '');
         if ($identity === '') throw new RuntimeException('TikTok did not return an account identity.');
@@ -71,16 +76,17 @@ class TikTokService
     {
         if (! $account->token_expires_at || $account->token_expires_at->isFuture()) return $account->user_access_token;
         if (! $account->refresh_token) throw new RuntimeException('Reconnect TikTok: the access token has expired.');
-        $token = $this->token(['grant_type' => 'refresh_token', 'refresh_token' => $account->refresh_token]);
+        $credential = $this->credentials->forProject($account->project, 'tiktok');
+        $token = $this->token($credential->client_id, $credential->client_secret, ['grant_type' => 'refresh_token', 'refresh_token' => $account->refresh_token]);
         $account->update(['user_access_token' => $token['access_token'], 'refresh_token' => $token['refresh_token'] ?? $account->refresh_token, 'token_expires_at' => now()->addSeconds((int) ($token['expires_in'] ?? 0))]);
         $account->pages()->update(['page_access_token' => $token['access_token']]);
 
         return $token['access_token'];
     }
 
-    private function token(array $payload): array
+    private function token(string $clientKey, string $clientSecret, array $payload): array
     {
-        $response = Http::asForm()->timeout(30)->post(config('tiktok.api_url').'/v2/oauth/token/', array_merge($payload, ['client_key' => config('tiktok.client_key'), 'client_secret' => config('tiktok.client_secret')]));
+        $response = Http::asForm()->timeout(30)->post(config('tiktok.api_url').'/v2/oauth/token/', array_merge($payload, ['client_key' => $clientKey, 'client_secret' => $clientSecret]));
         if ($response->failed()) throw new RuntimeException(data_get($response->json(), 'error_description', 'TikTok authorization failed.'));
 
         return $response->json() ?? [];
@@ -94,6 +100,5 @@ class TikTokService
         return $response->json() ?? [];
     }
 
-    private function redirectUri(): string { return config('tiktok.redirect_uri') ?: URL::route('tiktok.callback'); }
-    private function assertConfigured(): void { if (! config('tiktok.client_key') || ! config('tiktok.client_secret')) throw new RuntimeException('Set TIKTOK_CLIENT_KEY and TIKTOK_CLIENT_SECRET before connecting TikTok.'); }
+    private function redirectUri(?string $configuredUri = null): string { return $configuredUri ?: URL::route('tiktok.callback'); }
 }
