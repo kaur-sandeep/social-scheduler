@@ -99,6 +99,7 @@ results?.addEventListener('click', event => {
             ['Destination', viewButton.dataset.destination], ['Status', viewButton.dataset.status], ['Scheduled at', formatLocalDate(viewButton.dataset.scheduledAt)],
             ['Published at', formatLocalDate(viewButton.dataset.publishedAt)], ['Caption', viewButton.dataset.caption || '—']
         ];
+        if (viewButton.dataset.status === 'failed') fields.push(['Failure reason', viewButton.dataset.errorMessage || 'No failure reason was recorded.']);
         const details = document.getElementById('post-details-content');
         details.replaceChildren();
         fields.forEach(([label, value]) => {

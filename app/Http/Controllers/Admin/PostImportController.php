@@ -54,14 +54,28 @@ class PostImportController extends Controller
         foreach (range('A', 'I') as $column) $sheet->getColumnDimension($column)->setWidth($column === 'D' ? 48 : 22);
         // Let Excel accept normal date/time entry while consistently displaying the values expected by the importer.
         $sheet->getStyle('F2:F10000')->getNumberFormat()->setFormatCode('yyyy-mm-dd');
-        $sheet->getStyle('G2:G10000')->getNumberFormat()->setFormatCode('hh:mm');
+        $sheet->getStyle('G2:G10000')->getNumberFormat()->setFormatCode('HH:mm');
         $list = $book->createSheet(); $list->setTitle('Lists'); $list->setSheetState(\PhpOffice\PhpSpreadsheet\Worksheet\Worksheet::SHEETSTATE_HIDDEN);
         $projectNames = $projects->projectsFor($request->user())->pluck('name')->values()->all();
-        $accounts = SocialPage::query()->whereHas('account', fn ($q) => $q->where('user_id', $request->user()->id)->where('status', 'active'))->orderBy('provider')->orderBy('page_name')->get()->map(fn ($p) => $p->provider === 'instagram' && $p->instagram_username ? '@'.$p->instagram_username : $p->page_name)->unique()->values()->all();
+        $accounts = SocialPage::query()->whereHas('account', fn ($q) => $q->where('user_id', $request->user()->id)->where('status', 'active'))->orderBy('provider')->orderBy('page_name')->get()->flatMap(function (SocialPage $page) {
+            $accounts = [self::platformLabel($page->provider).' — '.($page->provider === 'instagram' && $page->instagram_username ? '@'.$page->instagram_username : $page->page_name)];
+            if ($page->instagram_business_id && $page->instagram_username) $accounts[] = 'Instagram — @'.$page->instagram_username;
+            return $accounts;
+        })->unique()->values()->all();
         $lists = [$projectNames, ['Facebook','Instagram','LinkedIn','X (Twitter)','Pinterest','Threads','YouTube'], $accounts, ['Asia/Kolkata','UTC','America/New_York','Europe/London','Australia/Sydney'], ['Draft','Pending']];
         foreach ($lists as $column => $values) foreach ($values as $row => $value) $list->setCellValueByColumnAndRow($column + 1, $row + 1, $value);
         foreach (['A' => 'A', 'B' => 'B', 'C' => 'C', 'H' => 'D', 'I' => 'E'] as $target => $source) { $validation = new DataValidation(); $validation->setType(DataValidation::TYPE_LIST)->setErrorStyle(DataValidation::STYLE_STOP)->setAllowBlank(false)->setShowDropDown(true)->setFormula1("Lists!\${$source}\$1:\${$source}\$".max(1, count($lists[array_search($target, ['A','B','C','H','I'])]))); $sheet->setDataValidation("{$target}2:{$target}10000", $validation); }
         $sheet->setCellValue('G2', '09:00'); $sheet->setCellValue('H2', 'Asia/Kolkata'); $sheet->setCellValue('I2', 'Pending');
         return response()->streamDownload(function () use ($book) { (new Xlsx($book))->save('php://output'); }, 'social-post-import-template.xlsx', ['Content-Type' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet']);
+    }
+
+    private static function platformLabel(string $provider): string
+    {
+        return match ($provider) {
+            'twitter' => 'X (Twitter)',
+            'tiktok' => 'TikTok',
+            'youtube' => 'YouTube',
+            default => ucfirst($provider),
+        };
     }
 }

@@ -9,6 +9,14 @@
         <div class="card shadow-sm border-0"><div class="card-body p-4">
             <h5 class="mb-2">Bulk post import</h5><p class="text-muted small">1. Download the template &nbsp; 2. Fill each row &nbsp; 3. Upload and import.</p>
             <a href="{{ route('posts.imports.template') }}" class="btn btn-outline-primary w-100 mb-4"><i class="bi bi-download"></i> Download Sample Template</a>
+            <div class="alert alert-info small mb-4" role="note">
+                <strong>Template instructions</strong>
+                <ul class="mb-0 mt-2 ps-3">
+                    <li>Choose the <em>Account/Page</em> with its social platform shown, for example <code>Facebook — Social Scheduler</code>.</li>
+                    <li>Use <code>YYYY-MM-DD</code> for Schedule Date, for example <code>2026-07-23</code>.</li>
+                    <li>Use 24-hour <code>HH:MM</code> for Schedule Time, for example <code>09:00</code> or <code>18:30</code>.</li>
+                </ul>
+            </div>
             <form action="{{ route('posts.imports.store') }}" method="post" enctype="multipart/form-data">
                 @csrf
                 <label class="form-label fw-semibold">Completed spreadsheet</label>

@@ -46,7 +46,8 @@ class PostImportService
         if (! $project) throw new \InvalidArgumentException('Project does not exist or is not available to you.');
         $platform = strtolower($row['platform']) === 'x (twitter)' || strtolower($row['platform']) === 'x' ? 'twitter' : strtolower($row['platform']);
         if (! in_array($platform, array_column(SocialProvider::cases(), 'value'), true)) throw new \InvalidArgumentException('Platform is not supported.');
-        $page = SocialPage::query()->whereHas('account', fn ($q) => $q->where('user_id', $user->id)->where('project_id', $project->id)->where('status', 'active'))->where(fn ($q) => $q->where('page_name', $row['account/page'])->orWhere('instagram_username', ltrim($row['account/page'], '@')))->first();
+        $accountPage = preg_replace('/^(?:Facebook|Instagram|LinkedIn|X \(Twitter\)|TikTok|Pinterest|Threads|YouTube) — /u', '', $row['account/page']) ?? $row['account/page'];
+        $page = SocialPage::query()->whereHas('account', fn ($q) => $q->where('user_id', $user->id)->where('project_id', $project->id)->where('status', 'active'))->where(fn ($q) => $q->where('page_name', $accountPage)->orWhere('instagram_username', ltrim($accountPage, '@')))->first();
         if (! $page || ($page->provider !== $platform && ! ($platform === 'instagram' && $page->instagram_business_id))) throw new \InvalidArgumentException('Connected account/page is unavailable for this platform.');
         $limits = ['instagram' => 2200, 'linkedin' => 3000, 'twitter' => 280];
         if (mb_strlen($row['content']) > ($limits[$platform] ?? 63206)) throw new \InvalidArgumentException('Content exceeds the platform character limit.');
