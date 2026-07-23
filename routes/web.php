@@ -15,6 +15,7 @@ use App\Http\Controllers\TwitterController;
 use App\Http\Controllers\PinterestController;
 use App\Http\Controllers\TikTokController;
 use App\Http\Controllers\Admin\ProjectSettingsController;
+use App\Http\Controllers\Admin\PostImportController;
 
 Route::get('/', function () {
     return auth()->check() ? redirect()->route('dashboard') : view('welcome');
@@ -59,6 +60,11 @@ Route::middleware('auth')->group(function () {
     Route::delete('/posts/{post}/permanent', [PostController::class, 'forceDestroy'])->name('posts.force-destroy');
     Route::get('/posts/pages', [PostController::class, 'pages'])->name('posts.pages');
     Route::patch('/posts/{post}/move', [PostController::class, 'move'])->name('posts.move');
+    Route::get('/posts/import', [PostImportController::class, 'index'])->name('posts.imports.index');
+    Route::post('/posts/import', [PostImportController::class, 'store'])->name('posts.imports.store');
+    Route::get('/posts/import/template', [PostImportController::class, 'template'])->name('posts.imports.template');
+    Route::get('/posts/import/{import}/progress', [PostImportController::class, 'progress'])->name('posts.imports.progress');
+    Route::get('/posts/import/{import}/errors', [PostImportController::class, 'errors'])->name('posts.imports.errors');
 
     Route::get('/logs', [LogController::class, 'index'])->name('logs.index');
     Route::view('/analytics', 'analytics.index')->name('analytics.index');

@@ -26,6 +26,7 @@
             <a class="nav-link {{ request()->routeIs('calendar.*') ? 'active' : '' }}" href="{{ route('calendar.index') }}"><i class="bi bi-calendar3"></i> Calendar</a>
             <a class="nav-link {{ request()->routeIs('posts.create') ? 'active' : '' }}" href="{{ route('posts.create') }}"><i class="bi bi-pencil-square"></i> Create Post</a>
             <a class="nav-link {{ request()->routeIs('posts.index') ? 'active' : '' }}" href="{{ route('posts.index') }}"><i class="bi bi-list-task"></i> Scheduled Posts</a>
+            <a class="nav-link {{ request()->routeIs('posts.imports.*') ? 'active' : '' }}" href="{{ route('posts.imports.index') }}"><i class="bi bi-file-earmark-arrow-up"></i> Import Posts</a>
             <!-- <a class="nav-link {{ request()->routeIs('analytics.*') ? 'active' : '' }}" href="{{ route('analytics.index') }}"><i class="bi bi-bar-chart"></i> Analytics</a> -->
         </nav>
         <div class="sidebar-section">Administration</div>
