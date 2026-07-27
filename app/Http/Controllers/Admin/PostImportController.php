@@ -49,12 +49,13 @@ class PostImportController extends Controller
     public function template(Request $request, ProjectRepository $projects)
     {
         $book = new Spreadsheet(); $sheet = $book->getActiveSheet(); $sheet->setTitle('Posts');
-        $headings = ['Project', 'Platform', 'Account/Page', 'Content', 'Media URL', 'Schedule Date', 'Schedule Time', 'Timezone', 'Status'];
-        $sheet->fromArray($headings, null, 'A1'); $sheet->freezePane('A2'); $sheet->getStyle('A1:I1')->getFont()->setBold(true); $sheet->getStyle('A1:I1')->getFill()->setFillType('solid')->getStartColor()->setRGB('D9EAF7');
-        foreach (range('A', 'I') as $column) $sheet->getColumnDimension($column)->setWidth($column === 'D' ? 48 : 22);
+        $headings = ['Project', 'Platform', 'Instagram Content Type', 'Account/Page', 'Content', 'Media URL', 'Schedule Date', 'Schedule Time', 'Timezone', 'Status'];
+        $sheet->fromArray($headings, null, 'A1'); $sheet->freezePane('A2');
+        $sheet->getStyle('A1:J1')->getFont()->setBold(true); $sheet->getStyle('A1:J1')->getFill()->setFillType('solid')->getStartColor()->setRGB('D9EAF7');
+        foreach (range('A', 'J') as $column) $sheet->getColumnDimension($column)->setWidth($column === 'E' ? 48 : 22);
         // Let Excel accept normal date/time entry while consistently displaying the values expected by the importer.
-        $sheet->getStyle('F2:F10000')->getNumberFormat()->setFormatCode('yyyy-mm-dd');
-        $sheet->getStyle('G2:G10000')->getNumberFormat()->setFormatCode('HH:mm');
+        $sheet->getStyle('G2:G10000')->getNumberFormat()->setFormatCode('yyyy-mm-dd');
+        $sheet->getStyle('H2:H10000')->getNumberFormat()->setFormatCode('HH:mm');
         $list = $book->createSheet(); $list->setTitle('Lists'); $list->setSheetState(\PhpOffice\PhpSpreadsheet\Worksheet\Worksheet::SHEETSTATE_HIDDEN);
         $projectNames = $projects->projectsFor($request->user())->pluck('name')->values()->all();
         $accounts = SocialPage::query()->whereHas('account', fn ($q) => $q->where('user_id', $request->user()->id)->where('status', 'active'))->orderBy('provider')->orderBy('page_name')->get()->flatMap(function (SocialPage $page) {
@@ -62,10 +63,10 @@ class PostImportController extends Controller
             if ($page->instagram_business_id && $page->instagram_username) $accounts[] = 'Instagram — @'.$page->instagram_username;
             return $accounts;
         })->unique()->values()->all();
-        $lists = [$projectNames, ['Facebook','Instagram','LinkedIn','X (Twitter)','Pinterest','Threads','YouTube'], $accounts, ['Asia/Kolkata','UTC','America/New_York','Europe/London','Australia/Sydney'], ['Draft','Pending']];
+        $lists = [$projectNames, ['Facebook','Instagram','LinkedIn','X (Twitter)','Pinterest','Threads','YouTube'], ['Image Post','Carousel','Reel'], $accounts, ['Asia/Kolkata','UTC','America/New_York','Europe/London','Australia/Sydney'], ['Draft','Pending']];
         foreach ($lists as $column => $values) foreach ($values as $row => $value) $list->setCellValueByColumnAndRow($column + 1, $row + 1, $value);
-        foreach (['A' => 'A', 'B' => 'B', 'C' => 'C', 'H' => 'D', 'I' => 'E'] as $target => $source) { $validation = new DataValidation(); $validation->setType(DataValidation::TYPE_LIST)->setErrorStyle(DataValidation::STYLE_STOP)->setAllowBlank(false)->setShowDropDown(true)->setFormula1("Lists!\${$source}\$1:\${$source}\$".max(1, count($lists[array_search($target, ['A','B','C','H','I'])]))); $sheet->setDataValidation("{$target}2:{$target}10000", $validation); }
-        $sheet->setCellValue('G2', '09:00'); $sheet->setCellValue('H2', 'Asia/Kolkata'); $sheet->setCellValue('I2', 'Pending');
+        foreach (['A' => 'A', 'B' => 'B', 'C' => 'C', 'D' => 'D', 'I' => 'E', 'J' => 'F'] as $target => $source) { $validation = new DataValidation(); $validation->setType(DataValidation::TYPE_LIST)->setErrorStyle(DataValidation::STYLE_STOP)->setAllowBlank($target === 'C')->setShowDropDown(true)->setFormula1("Lists!\${$source}\$1:\${$source}\$".max(1, count($lists[array_search($target, ['A','B','C','D','I','J'])]))); $sheet->setDataValidation("{$target}2:{$target}10000", $validation); }
+        $sheet->setCellValue('H2', '09:00'); $sheet->setCellValue('I2', 'Asia/Kolkata'); $sheet->setCellValue('J2', 'Pending');
         return response()->streamDownload(function () use ($book) { (new Xlsx($book))->save('php://output'); }, 'social-post-import-template.xlsx', ['Content-Type' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet']);
     }
 

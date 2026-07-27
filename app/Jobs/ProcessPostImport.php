@@ -28,7 +28,7 @@ class ProcessPostImport implements ShouldQueue
             $sheet = IOFactory::load(storage_path('app/private/'.$import->file_path))->getActiveSheet();
             $rows = $sheet->toArray(null, true, true, false);
             $headers = array_map(fn ($h) => strtolower(trim((string) $h)), $rows[0] ?? []);
-            if ($headers !== ['project','platform','account/page','content','media url','schedule date','schedule time','timezone','status']) throw new \RuntimeException('The spreadsheet headings do not match the sample template.');
+            if ($headers !== ['project','platform','instagram content type','account/page','content','media url','schedule date','schedule time','timezone','status']) throw new \RuntimeException('The spreadsheet headings do not match the sample template.');
             $dataRows = array_filter(array_slice($rows, 1), fn ($row) => (bool) array_filter($row, fn ($value) => $value !== null && $value !== ''));
             $import->update(['total_rows' => count($dataRows)]);
             foreach ($dataRows as $index => $row) {

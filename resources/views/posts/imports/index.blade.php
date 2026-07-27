@@ -13,8 +13,13 @@
                 <strong>Template instructions</strong>
                 <ul class="mb-0 mt-2 ps-3">
                     <li>Choose the <em>Account/Page</em> with its social platform shown, for example <code>Facebook — Social Scheduler</code>.</li>
+                    <li>For Instagram, select <em>Image Post</em>, <em>Carousel</em>, or <em>Reel</em> in the new <em>Instagram Content Type</em> column. Choose <em>Reel</em> for an MP4 or MOV reel video.</li>
+                    <li>For an Instagram carousel, enter 2–10 Dropbox media URLs in <em>Media URL</em>, separated by <code>|</code>.</li>
                     <li>Use <code>YYYY-MM-DD</code> for Schedule Date, for example <code>2026-07-23</code>.</li>
                     <li>Use 24-hour <code>HH:MM</code> for Schedule Time, for example <code>09:00</code> or <code>18:30</code>.</li>
+                    <li><strong>LinkedIn:</strong> if you add media, use one JPEG, PNG, or GIF image only; video uploads are not supported.</li>
+                    <li><strong>TikTok:</strong> one MP4, MOV, or WebM video. <strong>YouTube:</strong> one video. <strong>Pinterest:</strong> one image.</li>
+                    <li><strong>X (Twitter):</strong> leave Media URL empty; media uploads are not enabled.</li>
                 </ul>
             </div>
             <form action="{{ route('posts.imports.store') }}" method="post" enctype="multipart/form-data">
