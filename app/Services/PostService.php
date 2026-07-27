@@ -22,7 +22,8 @@ class PostService
                 'publish' => PostStatus::Queued,
                 default => PostStatus::Draft,
             };
-            $scheduledAt = $this->scheduledAt($data);
+            $isScheduled = ($data['action'] ?? 'draft') === 'schedule';
+            $scheduledAt = $isScheduled ? $this->scheduledAt($data) : null;
 
             $post = Post::query()->create([
                 'project_id' => $data['project_id'],
@@ -31,8 +32,8 @@ class PostService
                 'platform' => $data['platform'],
                 'message' => $data['message'],
                 'status' => $status,
-                'scheduled_date' => $data['scheduled_date'] ?? null,
-                'scheduled_time' => $data['scheduled_time'] ?? null,
+                'scheduled_date' => $isScheduled ? ($data['scheduled_date'] ?? null) : null,
+                'scheduled_time' => $isScheduled ? ($data['scheduled_time'] ?? null) : null,
                 'scheduled_at' => $scheduledAt,
                 'timezone' => $data['timezone'] ?? $user->timezone ?? config('app.timezone'),
                 'created_by' => $user->id,
@@ -42,6 +43,16 @@ class PostService
             $this->mediaService->attachUploads($post, $data['media'] ?? []);
 
             return $post->refresh();
+        });
+    }
+
+    /** @return \Illuminate\Support\Collection<int, Post> */
+    public function createMany(User $user, array $data)
+    {
+        return DB::transaction(function () use ($user, $data) {
+            return collect($data['publishes'] ?? [])->map(function (array $publish) use ($user, $data) {
+                return $this->create($user, array_merge($data, $publish));
+            });
         });
     }
 
@@ -68,12 +79,14 @@ class PostService
                 'publish' => PostStatus::Queued,
                 default => PostStatus::Draft,
             };
+            $isScheduled = ($data['action'] ?? 'draft') === 'schedule';
 
             $post->update([
                 'project_id' => $data['project_id'], 'social_page_id' => $data['social_page_id'] ?? null,
                 'platform' => $data['platform'], 'message' => $data['message'], 'status' => $status,
-                'scheduled_date' => $data['scheduled_date'] ?? null, 'scheduled_time' => $data['scheduled_time'] ?? null,
-                'scheduled_at' => $this->scheduledAt($data), 'timezone' => $data['timezone'],
+                'scheduled_date' => $isScheduled ? ($data['scheduled_date'] ?? null) : null,
+                'scheduled_time' => $isScheduled ? ($data['scheduled_time'] ?? null) : null,
+                'scheduled_at' => $isScheduled ? $this->scheduledAt($data) : null, 'timezone' => $data['timezone'],
                 'updated_by' => $post->user_id,
             ]);
             $this->mediaService->attachUploads($post, $data['media'] ?? []);

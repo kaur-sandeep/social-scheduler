@@ -49,15 +49,35 @@ class PostController extends Controller
         return response()->json($accounts->activePagesForProject($request->user()->id, $request->integer('project_id'))->map(fn ($page) => ['id' => $page->id, 'provider' => $page->provider, 'name' => $page->page_name, 'instagram_username' => $page->instagram_username, 'instagram_business_id' => $page->instagram_business_id]));
     }
 
-    public function store(StorePostRequest $request, PostService $service, SchedulerService $scheduler): RedirectResponse
+    public function store(StorePostRequest $request, PostService $service): RedirectResponse
     {
-        $post = $service->create($request->user(), $request->validated());
+        $posts = $service->createMany($request->user(), $request->validated());
 
-        if ($request->input('action') === 'publish') {
-            $scheduler->dispatch($post);
-        }
+        return redirect()->route('posts.review', ['posts' => $posts->pluck('id')->all()]);
+    }
 
-        return redirect()->route('posts.index')->with('success', $request->input('action') === 'publish' ? 'Post queued for publishing.' : 'Post saved.');
+    public function review(\Illuminate\Http\Request $request): View
+    {
+        $ids = collect($request->input('posts', []))->filter(fn ($id) => filter_var($id, FILTER_VALIDATE_INT))->map(fn ($id) => (int) $id)->values();
+        abort_if($ids->isEmpty(), 404);
+
+        $posts = Post::query()->with(['media', 'project', 'socialPage'])
+            ->where('user_id', $request->user()->id)->whereIn('id', $ids)->get()->sortBy(fn (Post $post) => $ids->search($post->id))->values();
+        abort_unless($posts->count() === $ids->unique()->count(), 404);
+
+        return view('posts.review', compact('posts', 'ids'));
+    }
+
+    public function confirmPublish(\Illuminate\Http\Request $request, SchedulerService $scheduler): RedirectResponse
+    {
+        $ids = collect($request->validate(['posts' => ['required', 'array'], 'posts.*' => ['integer']])['posts'])->unique()->values();
+        $posts = Post::query()->where('user_id', $request->user()->id)->whereIn('id', $ids)->get();
+        abort_unless($posts->count() === $ids->count(), 404);
+
+        $posts->filter(fn (Post $post) => $post->status === \App\Enums\PostStatus::Queued)
+            ->each(fn (Post $post) => $scheduler->dispatch($post));
+
+        return redirect()->route('posts.review', ['posts' => $ids->all()])->with('success', 'Selected posts have been queued for publishing.');
     }
 
     public function edit(Post $post, ProjectRepository $projects): View
@@ -80,8 +100,13 @@ class PostController extends Controller
         abort_unless($post->user_id === $request->user()->id, 403);
         abort_if(in_array($post->status, [\App\Enums\PostStatus::Published, \App\Enums\PostStatus::Publishing], true), 422, 'Published or publishing posts cannot be edited.');
 
-        $post = $service->update($post, $request->validated());
-        if ($request->input('action') === 'publish') $scheduler->dispatch($post);
+        $data = array_merge($request->validated(), $request->validated('publishes.0'));
+        $post = $service->update($post, $data);
+        if ($reviewPosts = collect($request->input('review_posts', []))->filter(fn ($id) => filter_var($id, FILTER_VALIDATE_INT))->all()) {
+            return redirect()->route('posts.review', ['posts' => $reviewPosts])->with('success', 'Post updated.');
+        }
+
+        if ($post->status === \App\Enums\PostStatus::Queued) $scheduler->dispatch($post);
 
         return redirect()->route('posts.index')->with('success', 'Post updated.');
     }

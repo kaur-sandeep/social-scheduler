@@ -54,6 +54,8 @@ Route::middleware('auth')->group(function () {
     Route::get('/tiktok/callback', [TikTokController::class, 'callback'])->name('tiktok.callback');
     Route::post('/tiktok/accounts/{account}/disconnect', [TikTokController::class, 'disconnect'])->name('tiktok.disconnect');
 
+    Route::get('/posts/review', [PostController::class, 'review'])->name('posts.review');
+    Route::post('/posts/review/publish', [PostController::class, 'confirmPublish'])->name('posts.review.publish');
     Route::resource('posts', PostController::class)->only(['index', 'create', 'store', 'edit', 'update', 'destroy']);
     Route::get('/posts/deleted', [PostController::class, 'deleted'])->name('posts.deleted');
     Route::patch('/posts/{post}/restore', [PostController::class, 'restore'])->name('posts.restore');
