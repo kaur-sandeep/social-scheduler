@@ -22,6 +22,46 @@
                     <li><strong>X (Twitter):</strong> leave Media URL empty; media uploads are not enabled.</li>
                 </ul>
             </div>
+            <div class="card border-primary mb-4">
+                <div class="card-body p-4">
+                    <h5 class="mb-2">
+                        <i class="bi bi-stars"></i> Generate Bulk Posts with AI
+                    </h5>
+
+                    <p class="text-muted small">
+                        Describe the posts you want and AI will generate a ready-to-import
+                        spreadsheet using the existing bulk import template.
+                    </p>
+
+                    <form id="aiBulkPostForm">
+                        @csrf
+
+                        <div class="mb-3">
+                            <label class="form-label fw-semibold">AI Prompt</label>
+
+                            <textarea
+                                name="prompt"
+                                id="aiPrompt"
+                                class="form-control"
+                                rows="5"
+                                placeholder="Example: Create 20 Facebook posts for a photography business. Use a professional and friendly tone. Schedule 2 posts per day starting from 1 September 2026."
+                                required
+                            ></textarea>
+                        </div>
+
+                        <button
+                            type="submit"
+                            id="generateAiPosts"
+                            class="btn btn-primary w-100"
+                        >
+                            <i class="bi bi-stars"></i>
+                            Generate Bulk Post File
+                        </button>
+                    </form>
+
+                    <div id="aiGenerationStatus" class="mt-3"></div>
+                </div>
+            </div>
             <form action="{{ route('posts.imports.store') }}" method="post" enctype="multipart/form-data">
                 @csrf
                 <label class="form-label fw-semibold">Completed spreadsheet</label>

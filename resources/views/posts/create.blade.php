@@ -62,7 +62,15 @@
 
         <section class="wizard-step d-none" data-step="4">
             <div class="wizard-step-heading"><span>Step 4</span><h2>Create posts</h2><p>Compose each post, attach media, then choose how it should be published.</p></div>
-            <div class="timezone-context mb-4"><i class="bi bi-clock-history"></i><div><strong>Current timezone: {{ $userTimezone }} (UTC {{ $userNow->format('P') }})</strong><span>Current local time: <time id="current-local-time">{{ $userNow->format('d M Y, h:i A') }}</time></span></div></div>
+            <!-- <div class="timezone-context mb-4">
+                <i class="bi bi-clock-history"></i>
+                <div>
+                    <strong>Current timezone: {{ $userTimezone }} (UTC {{ $userNow->format('P') }})</strong>
+                    <span>Current local time: 
+                        <time id="current-local-time">{{ $userNow->format('d M Y, h:i A') }}</time>
+                    </span>
+                </div>
+            </div> -->
             <div id="publish-cards">
                 @foreach($initialPublishes as $index => $publish)
                     @include('posts.partials.publish-card', ['index' => $index, 'publish' => $publish, 'first' => $index === 0])

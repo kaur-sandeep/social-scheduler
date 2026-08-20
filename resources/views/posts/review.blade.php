@@ -21,9 +21,9 @@
                 <article class="review-publish review-post-card">
                     <div class="review-card-header"><div><span class="preview-label">Post #{{ $index + 1 }}</span><h3>{{ ucfirst($post->platform) }} <span>·</span> {{ $post->socialPage?->page_name ?? 'Profile' }}</h3></div>
                      @if($posts->contains(fn ($post) => $post->status->value === 'queued'))
-                      @if(!session('success'))
+              
                         <a class="btn btn-outline-primary btn-sm" href="{{ $editUrl }}"><i class="bi bi-pencil"></i> Edit</a>
-                         @endif
+               
                           @endif
                 </div>
                     <div class="review-card-grid"><div><div class="review-caption-label">Content preview</div><p class="text-break review-caption">{{ $post->message }}</p></div><div class="review-meta"><span><i class="bi bi-broadcast"></i> {{ ucfirst($post->platform) }}</span><span><i class="bi bi-person-square"></i> {{ $post->socialPage?->page_name ?? 'Profile' }}</span><span><i class="bi bi-flag"></i> {{ $status }}</span></div></div>
@@ -35,9 +35,9 @@
     </section>
     <div class="wizard-footer"><a class="btn btn-outline-secondary" href="{{ route('posts.create') }}"><i class="bi bi-arrow-left"></i> Back to Create Posts</a>
     @if($posts->contains(fn ($post) => $post->status->value === 'queued'))
-    @if(!session('success'))
+
     <form method="post" action="{{ route('posts.review.publish') }}">@csrf @foreach($ids as $id)<input type="hidden" name="posts[]" value="{{ $id }}">@endforeach<button class="btn btn-primary"><i class="bi bi-send"></i> Confirm &amp; Publish</button></form>
-    @endif
+
     @endif
 </div>
 </div>
