@@ -1,7 +1,8 @@
 <?php
 
 namespace App\Http\Controllers\Admin;
-
+use Maatwebsite\Excel\Facades\Excel;
+use App\Exports\AiPostExport;
 use App\Enums\SocialProvider;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\StorePostImportRequest;
@@ -17,7 +18,9 @@ use PhpOffice\PhpSpreadsheet\Cell\DataValidation;
 use PhpOffice\PhpSpreadsheet\Style\NumberFormat;
 use PhpOffice\PhpSpreadsheet\Spreadsheet;
 use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
-
+use App\Services\AiPostGeneratorService;
+use Illuminate\Support\Facades\Log;
+use App\Models\Project;
 class PostImportController extends Controller
 {
     public function index(Request $request, ProjectRepository $projects)
@@ -79,4 +82,339 @@ class PostImportController extends Controller
             default => ucfirst($provider),
         };
     }
+        public function generateAiBulkPosts(
+            Request $request,
+            AiPostGeneratorService $aiPostGenerator
+        ) {
+            $request->validate([
+                'prompt' => [
+                    'required',
+                    'string',
+                    'max:5000',
+                ],
+            ]);
+
+            try {
+
+                $user = auth()->user();
+
+                /*
+                * Get projects belonging to current user.
+                */
+                $projects = Project::query()
+                    ->where('user_id', $user->id)
+                    ->pluck('name')
+                    ->values()
+                    ->all();
+
+                if (empty($projects)) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'You do not have any projects available.',
+                    ], 422);
+                }
+
+               $accounts = SocialPage::query()
+                ->whereHas('account', function ($query) use ($user) {
+                    $query
+                        ->where('user_id', $user->id)
+                        ->where('status', 'active');
+                })
+                ->get()
+                ->map(function ($page) {
+
+                    $accountName = $page->page_name;
+
+                    if (
+                        empty($accountName) &&
+                        ! empty($page->instagram_username)
+                    ) {
+                        $accountName = '@' . $page->instagram_username;
+                    }
+
+                    return [
+                        'platform' => $page->provider,
+                        'account' => $accountName,
+                    ];
+                })
+                ->values()
+                ->all();
+
+            /*
+            * Social accounts are optional for AI generation.
+            *
+            * If accounts exist:
+            *   AI can select platform/account.
+            *
+            * If no accounts exist:
+            *   AI should still generate the posts.
+            *   Platform/account fields will remain empty.
+            */
+            $hasSocialAccounts = ! empty($accounts);
+                /*
+                * Send prompt + actual user context to AI.
+                */
+                $posts = $aiPostGenerator->generate(
+                    $request->prompt,
+                    [
+                        'projects' => $projects,
+                        'accounts' => $accounts,
+                    ]
+                );
+
+                if (empty($posts)) {
+                    throw new \RuntimeException(
+                        'AI did not generate any posts.'
+                    );
+                }
+
+                /*
+                * Validate AI output before creating Excel.
+                */
+                $this->validateAiPosts(
+                    $posts,
+                    $projects,
+                    $accounts
+                );
+
+                /*
+                * Create unique filename.
+                */
+                $filename =
+                    'ai-bulk-posts-'.
+                    $user->id.'-'.
+                    now()->format('YmdHis').
+                    '.xlsx';
+
+                $path = 'post-imports/'.$filename;
+
+                /*
+                * Create Excel file.
+                */
+                Excel::store(
+                    new AiPostExport($posts),
+                    $path,
+                    'public'
+                );
+
+                /*
+                * Generate download URL.
+                */
+                $downloadUrl = Storage::disk('public')->url($path);
+
+                return response()->json([
+                    'success' => true,
+                    'message' => 'Bulk post file generated successfully.',
+                    'download_url' => $downloadUrl,
+                    'filename' => $filename,
+                    'count' => count($posts),
+                ]);
+
+            } catch (\Throwable $e) {
+
+                Log::error(
+                    'AI bulk post generation failed',
+                    [
+                        'user_id' => auth()->id(),
+                        'prompt' => $request->prompt,
+                        'error' => $e->getMessage(),
+                        'trace' => $e->getTraceAsString(),
+                    ]
+                );
+
+                return response()->json([
+                    'success' => false,
+                    'message' => $e->getMessage(),
+                ], 422);
+            }
+        }
+
+        private function validateAiPosts(
+            array $posts,
+            array $projects,
+            array $accounts
+        ): void {
+
+            $allowedPlatforms = [
+                'facebook',
+                'instagram',
+                'linkedin',
+                'twitter',
+                'tiktok',
+                'pinterest',
+                'threads',
+                'youtube',
+            ];
+
+            $projectNames = collect($projects)
+                ->map(fn ($name) => mb_strtolower(trim($name)))
+                ->all();
+
+            $availableAccounts = collect($accounts)
+                ->map(function ($account) {
+                    return [
+                        'platform' => mb_strtolower(
+                            trim((string) $account['platform'])
+                        ),
+                        'account' => mb_strtolower(
+                            trim((string) $account['account'])
+                        ),
+                    ];
+                })
+                ->all();
+
+            foreach ($posts as $index => $post) {
+
+                $row = $index + 1;
+
+                $required = [
+                    'project',
+                    'content',
+                    'schedule date',
+                    'schedule time',
+                    'timezone',
+                    'status',
+                ];
+
+                foreach ($required as $field) {
+
+                    if (
+                        ! array_key_exists($field, $post) ||
+                        trim((string) $post[$field]) === ''
+                    ) {
+                        throw new \RuntimeException(
+                            "AI generated row {$row}: {$field} is required."
+                        );
+                    }
+                }
+
+                /*
+                * Project must exist.
+                */
+                if (
+                    ! in_array(
+                        mb_strtolower(trim($post['project'])),
+                        $projectNames,
+                        true
+                    )
+                ) {
+                    throw new \RuntimeException(
+                        "AI generated row {$row}: project does not exist."
+                    );
+                }
+
+                /*
+                * Normalize platform.
+                */
+              $platform = strtolower(trim((string) ($post['platform'] ?? '')));
+
+                if ($platform === 'x' || $platform === 'x (twitter)') {
+                    $platform = 'twitter';
+                }
+
+                if ($platform !== '' && ! in_array($platform, $allowedPlatforms, true)) {
+                    throw new \RuntimeException(
+                        "AI generated row {$row}: unsupported platform."
+                    );
+                }
+
+                /*
+                * Media MUST remain empty.
+                */
+                $post['media url'] = '';
+
+                /*
+                * Instagram content type.
+                */
+                $contentType = strtolower(
+                    trim((string) ($post['instagram content type'] ?? ''))
+                );
+
+                if ($platform === 'instagram') {
+
+                    if (! in_array(
+                        $contentType,
+                        [
+                            '',
+                            'image post',
+                            'image',
+                            'carousel',
+                            'reel',
+                        ],
+                        true
+                    )) {
+                        throw new \RuntimeException(
+                            "AI generated row {$row}: invalid Instagram Content Type."
+                        );
+                    }
+
+                } elseif ($contentType !== '') {
+
+                    throw new \RuntimeException(
+                        "AI generated row {$row}: Instagram Content Type can only be used for Instagram."
+                    );
+                }
+
+                /*
+                * Content limits.
+                */
+                $limits = [
+                    'instagram' => 2200,
+                    'linkedin' => 3000,
+                    'twitter' => 280,
+                ];
+
+                if (
+                    isset($limits[$platform]) &&
+                    mb_strlen($post['content']) > $limits[$platform]
+                ) {
+                    throw new \RuntimeException(
+                        "AI generated row {$row}: content exceeds {$platform} character limit."
+                    );
+                }
+
+                /*
+                * Timezone.
+                */
+                if (
+                    ! in_array(
+                        $post['timezone'],
+                        timezone_identifiers_list(),
+                        true
+                    )
+                ) {
+                    throw new \RuntimeException(
+                        "AI generated row {$row}: invalid timezone."
+                    );
+                }
+
+                /*
+                * Date/time.
+                */
+                try {
+
+                    $scheduled = \Carbon\Carbon::createFromFormat(
+                        '!Y-m-d H:i',
+                        $post['schedule date'].' '.$post['schedule time'],
+                        $post['timezone']
+                    );
+
+                } catch (\Throwable) {
+
+                    throw new \RuntimeException(
+                        "AI generated row {$row}: invalid schedule date/time."
+                    );
+                }
+
+                if (
+                    $scheduled->lessThanOrEqualTo(
+                        now($post['timezone'])
+                    )
+                ) {
+                    throw new \RuntimeException(
+                        "AI generated row {$row}: schedule time is in the past."
+                    );
+                }
+            }
+        }
 }

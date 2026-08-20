@@ -28,10 +28,18 @@
                         <i class="bi bi-stars"></i> Generate Bulk Posts with AI
                     </h5>
 
-                    <p class="text-muted small">
-                        Describe the posts you want and AI will generate a ready-to-import
-                        spreadsheet using the existing bulk import template.
-                    </p>
+                        <div class="alert alert-info small">
+                            <strong>How it works:</strong>
+
+                            <ol class="mb-0 mt-2 ps-3">
+                                <li>Enter your instructions and generate the Excel file.</li>
+                                <li>Download and review the generated posts.</li>
+                                <li>Create/select your images or videos.</li>
+                                <li>Upload your media to Dropbox.</li>
+                                <li>Add the Dropbox URL(s) in the <strong>Media URL</strong> column.</li>
+                                <li>Upload the completed spreadsheet below.</li>
+                            </ol>
+                        </div>
 
                     <form id="aiBulkPostForm">
                         @csrf
@@ -95,5 +103,104 @@ setInterval(() => document.querySelectorAll('[data-import-id]').forEach(row => {
     row.querySelector('.results').innerHTML=`<span class="text-success">${data.successful} imported</span><br><span class="text-danger">${data.failed} failed</span>${data.skipped ? `<br><span class="text-muted">${data.skipped} skipped</span>` : ''}`;
   }).catch(()=>{});
 }), 5000);
+document.getElementById('aiBulkPostForm').addEventListener('submit', function (e) {
+    e.preventDefault();
+
+    const form = this;
+    const button = document.getElementById('generateAiPosts');
+    const status = document.getElementById('aiGenerationStatus');
+    const prompt = document.getElementById('aiPrompt').value.trim();
+
+    if (!prompt) {
+        status.innerHTML = `
+            <div class="alert alert-warning">
+                Please enter a prompt.
+            </div>
+        `;
+        return;
+    }
+
+    const csrfToken = form.querySelector('input[name="_token"]').value;
+
+    button.disabled = true;
+    button.innerHTML = `
+        <span class="spinner-border spinner-border-sm"></span>
+        Generating...
+    `;
+
+    status.innerHTML = `
+        <div class="alert alert-info">
+            AI is generating your bulk posts. Please wait...
+        </div>
+    `;
+
+    fetch('{{ route("posts.imports.ai.generate") }}', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
+            'X-CSRF-TOKEN': csrfToken
+        },
+        body: JSON.stringify({
+            prompt: prompt,
+            _token: csrfToken
+        })
+    })
+    .then(async response => {
+        const data = await response.json();
+
+        if (!response.ok) {
+            throw new Error(data.message || 'Unable to generate the file.');
+        }
+
+        return data;
+    })
+    .then(data => {
+
+        if (data.success) {
+
+            status.innerHTML = `
+                <div class="alert alert-success">
+                    <strong>Bulk post file generated successfully.</strong>
+                    <br>
+                    <a href="${data.download_url}"
+                       class="btn btn-sm btn-success mt-2">
+                        <i class="bi bi-download"></i>
+                        Download Excel File
+                    </a>
+                </div>
+            `;
+
+        } else {
+
+            status.innerHTML = `
+                <div class="alert alert-danger">
+                    ${data.message || 'Unable to generate the file.'}
+                </div>
+            `;
+        }
+
+    })
+    .catch(error => {
+
+        console.error(error);
+
+        status.innerHTML = `
+            <div class="alert alert-danger">
+                ${error.message || 'Something went wrong while generating the file.'}
+            </div>
+        `;
+
+    })
+    .finally(() => {
+
+        button.disabled = false;
+
+        button.innerHTML = `
+            <i class="bi bi-stars"></i>
+            Generate Bulk Post File
+        `;
+    });
+});
 </script>
 @endpush

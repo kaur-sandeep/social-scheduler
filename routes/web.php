@@ -78,4 +78,8 @@ Route::middleware('auth')->group(function () {
     Route::delete('/project-settings/{project}', [ProjectSettingsController::class, 'destroy'])->name('project-settings.destroy');
     Route::patch('/project-settings/{project}/restore', [ProjectSettingsController::class, 'restore'])->name('project-settings.restore');
     Route::delete('/project-settings/{project}/permanent', [ProjectSettingsController::class, 'forceDestroy'])->name('project-settings.force-destroy');
+    Route::post(
+    '/posts/imports/ai/generate',
+    [PostImportController::class, 'generateAiBulkPosts']
+)->name('posts.imports.ai.generate');
 });
