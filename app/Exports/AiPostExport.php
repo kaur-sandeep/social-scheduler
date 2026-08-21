@@ -14,17 +14,17 @@ class AiPostExport implements FromArray, WithHeadings
 
     public function headings(): array
     {
-        return [
-            'project',
-            'platform',
-            'instagram content type',
-            'account/page',
-            'content',
-            'media url',
-            'schedule date',
-            'schedule time',
-            'timezone',
-            'status',
+         return [
+            'Project',
+            'Platform',
+            'Instagram Content Type',
+            'Account/Page',
+            'Content',
+            'Media URL',
+            'Schedule Date',
+            'Schedule Time',
+            'Timezone',
+            'Status',
         ];
     }
 

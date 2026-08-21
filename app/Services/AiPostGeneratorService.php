@@ -109,53 +109,436 @@ PROMPT;
             'current_date' => now()->toDateString(),
         ];
 
-        $response = Http::withToken(config('services.openai.api_key'))
+        $userContent = json_encode(
+            $userMessage,
+            JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE
+        );
+
+        /*
+        |--------------------------------------------------------------------------
+        | AI PROVIDER FALLBACK ORDER
+        |--------------------------------------------------------------------------
+        |
+        | OpenAI
+        |    ↓ failure
+        | Anthropic
+        |    ↓ failure
+        | Gemini
+        |    ↓ failure
+        | Groq
+        |    ↓ failure
+        | OpenRouter
+        |
+        */
+
+        $providers = [
+            'openai',
+            'anthropic',
+            'gemini',
+            'groq',
+            'openrouter',
+        ];
+
+        $errors = [];
+
+        foreach ($providers as $provider) {
+
+            try {
+
+                $content = match ($provider) {
+
+                    'openai' => $this->callOpenAI(
+                        $systemPrompt,
+                        $userContent
+                    ),
+
+                    'anthropic' => $this->callAnthropic(
+                        $systemPrompt,
+                        $userContent
+                    ),
+
+                    'gemini' => $this->callGemini(
+                        $systemPrompt,
+                        $userContent
+                    ),
+
+                    'groq' => $this->callGroq(
+                        $systemPrompt,
+                        $userContent
+                    ),
+
+                    'openrouter' => $this->callOpenRouter(
+                        $systemPrompt,
+                        $userContent
+                    ),
+
+                    default => null,
+                };
+
+                if (!empty($content)) {
+
+                    $result = json_decode($content, true);
+
+                    if (
+                        is_array($result) &&
+                        isset($result['posts']) &&
+                        is_array($result['posts'])
+                    ) {
+                        return $result['posts'];
+                    }
+
+                    $errors[$provider] = 'Invalid JSON/post structure returned.';
+                }
+
+            } catch (\Throwable $e) {
+
+                $errors[$provider] = $e->getMessage();
+
+                /*
+                |--------------------------------------------------------------------------
+                | IMPORTANT:
+                | Continue to next provider.
+                |--------------------------------------------------------------------------
+                */
+
+                continue;
+            }
+        }
+
+        throw new RuntimeException(
+            'All AI providers failed. ' .
+            json_encode($errors)
+        );
+    }
+
+
+    /**
+     * OpenAI
+     */
+    private function callOpenAI(
+        string $systemPrompt,
+        string $userContent
+    ): string {
+
+        $apiKey = config('services.openai.api_key');
+
+        if (!$apiKey) {
+            throw new RuntimeException('OpenAI API key is missing.');
+        }
+
+        $response = Http::withToken($apiKey)
             ->timeout(120)
-            ->post('https://api.openai.com/v1/chat/completions', [
-                'model' => config('services.openai.model'),
-                'temperature' => 0.7,
-                'messages' => [
-                    [
-                        'role' => 'system',
-                        'content' => $systemPrompt,
-                    ],
-                    [
-                        'role' => 'user',
-                        'content' => json_encode(
-                            $userMessage,
-                            JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE
-                        ),
-                    ],
-                ],
-                'response_format' => [
-                    'type' => 'json_object',
-                ],
-            ]);
+            ->post(
+                'https://api.openai.com/v1/chat/completions',
+                [
+                    'model' => config(
+                        'services.openai.model',
+                        'gpt-4o-mini'
+                    ),
 
-        if (! $response->successful()) {
+                    'temperature' => 0.7,
+
+                    'messages' => [
+                        [
+                            'role' => 'system',
+                            'content' => $systemPrompt,
+                        ],
+                        [
+                            'role' => 'user',
+                            'content' => $userContent,
+                        ],
+                    ],
+
+                    'response_format' => [
+                        'type' => 'json_object',
+                    ],
+                ]
+            );
+
+        if (!$response->successful()) {
+
             throw new RuntimeException(
-                'OpenAI API error: '.$response->body()
+                'OpenAI failed: ' . $response->body()
             );
         }
 
-        $content = $response->json('choices.0.message.content');
+        $content = $response->json(
+            'choices.0.message.content'
+        );
 
-        if (! $content) {
-            throw new RuntimeException('AI returned an empty response.');
-        }
-
-        $result = json_decode($content, true);
-
-        if (
-            ! is_array($result) ||
-            ! isset($result['posts']) ||
-            ! is_array($result['posts'])
-        ) {
+        if (!$content) {
             throw new RuntimeException(
-                'AI returned an invalid post structure.'
+                'OpenAI returned empty response.'
             );
         }
 
-        return $result['posts'];
+        return $content;
+    }
+
+
+    /**
+     * Anthropic Claude
+     */
+    private function callAnthropic(
+        string $systemPrompt,
+        string $userContent
+    ): string {
+
+        $apiKey = config('services.anthropic.api_key');
+
+        if (!$apiKey) {
+            throw new RuntimeException(
+                'Anthropic API key is missing.'
+            );
+        }
+
+        $response = Http::withHeaders([
+            'x-api-key' => $apiKey,
+            'anthropic-version' => '2023-06-01',
+            'Content-Type' => 'application/json',
+        ])
+            ->timeout(120)
+            ->post(
+                'https://api.anthropic.com/v1/messages',
+                [
+                    'model' => config(
+                        'services.anthropic.model',
+                        'claude-sonnet-4-0'
+                    ),
+
+                    'max_tokens' => 8000,
+
+                    'system' => $systemPrompt,
+
+                    'messages' => [
+                        [
+                            'role' => 'user',
+                            'content' => $userContent,
+                        ],
+                    ],
+                ]
+            );
+
+        if (!$response->successful()) {
+
+            throw new RuntimeException(
+                'Anthropic failed: ' . $response->body()
+            );
+        }
+
+        $content = $response->json(
+            'content.0.text'
+        );
+
+        if (!$content) {
+            throw new RuntimeException(
+                'Anthropic returned empty response.'
+            );
+        }
+
+        return $content;
+    }
+
+
+    /**
+     * Google Gemini
+     */
+    private function callGemini(
+        string $systemPrompt,
+        string $userContent
+    ): string {
+
+        $apiKey = config('services.gemini.api_key');
+
+        if (!$apiKey) {
+            throw new RuntimeException(
+                'Gemini API key is missing.'
+            );
+        }
+
+        $model = config(
+            'services.gemini.model',
+            'gemini-2.0-flash-lite'
+        );
+
+        $url =
+            'https://generativelanguage.googleapis.com/v1beta/models/' .
+            $model .
+            ':generateContent?key=' .
+            urlencode($apiKey);
+
+        $response = Http::timeout(120)
+            ->post(
+                $url,
+                [
+                    'system_instruction' => [
+                        'parts' => [
+                            [
+                                'text' => $systemPrompt,
+                            ],
+                        ],
+                    ],
+
+                    'contents' => [
+                        [
+                            'role' => 'user',
+                            'parts' => [
+                                [
+                                    'text' => $userContent,
+                                ],
+                            ],
+                        ],
+                    ],
+                ]
+            );
+
+        if (!$response->successful()) {
+
+            throw new RuntimeException(
+                'Gemini failed: ' . $response->body()
+            );
+        }
+
+        $content = $response->json(
+            'candidates.0.content.parts.0.text'
+        );
+
+        if (!$content) {
+            throw new RuntimeException(
+                'Gemini returned empty response.'
+            );
+        }
+
+        return $content;
+    }
+
+
+    /**
+     * Groq
+     */
+    private function callGroq(
+        string $systemPrompt,
+        string $userContent
+    ): string {
+
+        $apiKey = config('services.groq.api_key');
+
+        if (!$apiKey) {
+            throw new RuntimeException(
+                'Groq API key is missing.'
+            );
+        }
+
+        $response = Http::withToken($apiKey)
+            ->timeout(120)
+            ->post(
+                'https://api.groq.com/openai/v1/chat/completions',
+                [
+                    'model' => config(
+                        'services.groq.model',
+                        'llama-3.3-70b-versatile'
+                    ),
+
+                    'messages' => [
+                        [
+                            'role' => 'system',
+                            'content' => $systemPrompt,
+                        ],
+                        [
+                            'role' => 'user',
+                            'content' => $userContent,
+                        ],
+                    ],
+                ]
+            );
+
+        if (!$response->successful()) {
+
+            throw new RuntimeException(
+                'Groq failed: ' . $response->body()
+            );
+        }
+
+        $content = $response->json(
+            'choices.0.message.content'
+        );
+
+        if (!$content) {
+            throw new RuntimeException(
+                'Groq returned empty response.'
+            );
+        }
+
+        return $content;
+    }
+
+
+    /**
+     * OpenRouter
+     */
+    private function callOpenRouter(
+        string $systemPrompt,
+        string $userContent
+    ): string {
+
+        $apiKey = config('services.openrouter.api_key');
+
+        if (!$apiKey) {
+            throw new RuntimeException(
+                'OpenRouter API key is missing.'
+            );
+        }
+
+        $response = Http::withToken($apiKey)
+            ->timeout(120)
+            ->withHeaders([
+                'HTTP-Referer' => config(
+                    'app.url',
+                    'https://yourdomain.com'
+                ),
+                'X-Title' => config(
+                    'app.name',
+                    'Social Media Scheduler'
+                ),
+            ])
+            ->post(
+                'https://openrouter.ai/api/v1/chat/completions',
+                [
+                    'model' => config(
+                        'services.openrouter.model',
+                        'openai/gpt-4o-mini'
+                    ),
+
+                    'messages' => [
+                        [
+                            'role' => 'system',
+                            'content' => $systemPrompt,
+                        ],
+                        [
+                            'role' => 'user',
+                            'content' => $userContent,
+                        ],
+                    ],
+                ]
+            );
+
+        if (!$response->successful()) {
+
+            throw new RuntimeException(
+                'OpenRouter failed: ' . $response->body()
+            );
+        }
+
+        $content = $response->json(
+            'choices.0.message.content'
+        );
+
+        if (!$content) {
+            throw new RuntimeException(
+                'OpenRouter returned empty response.'
+            );
+        }
+
+        return $content;
     }
 }
