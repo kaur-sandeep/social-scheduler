@@ -25,10 +25,23 @@ class ProcessPostImport implements ShouldQueue
         $import->update(['status' => 'processing', 'started_at' => now()]);
         Log::info('Post import started', ['import_id' => $import->id, 'user_id' => $import->user_id]);
         try {
-            $sheet = IOFactory::load(storage_path('app/private/'.$import->file_path))->getActiveSheet();
+            $workbook = IOFactory::load(storage_path('app/private/'.$import->file_path));
+            // AI exports include a hidden worksheet used for dropdown values. Always
+            // prefer the actual post worksheet instead of relying on Excel's active tab.
+            $sheet = $workbook->getSheetByName('Posts') ?? $workbook->getActiveSheet();
             $rows = $sheet->toArray(null, true, true, false);
-            $headers = array_map(fn ($h) => strtolower(trim((string) $h)), $rows[0] ?? []);
-            if ($headers !== ['project','platform','instagram content type','account/page','content','media url','schedule date','schedule time','timezone','status']) throw new \RuntimeException('The spreadsheet headings do not match the sample template.');
+            $headers = array_map(function ($header): string {
+                $header = str_replace(["\xEF\xBB\xBF", "\xC2\xA0"], ['', ' '], (string) $header);
+
+                return strtolower(trim((string) preg_replace('/\s+/u', ' ', $header)));
+            }, $rows[0] ?? []);
+            // Spreadsheet editors may retain empty columns after the template. They
+            // are not headings and should not invalidate an otherwise valid import.
+            while ($headers !== [] && end($headers) === '') {
+                array_pop($headers);
+            }
+            $expectedHeaders = ['project','platform','instagram content type','account/page','content','media url','schedule date','schedule time','timezone','status'];
+            if ($headers !== $expectedHeaders) throw new \RuntimeException('The spreadsheet headings do not match the sample template.');
             $dataRows = array_filter(array_slice($rows, 1), fn ($row) => (bool) array_filter($row, fn ($value) => $value !== null && $value !== ''));
             $import->update(['total_rows' => count($dataRows)]);
             foreach ($dataRows as $index => $row) {
