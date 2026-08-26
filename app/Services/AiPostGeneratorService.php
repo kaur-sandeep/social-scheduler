@@ -60,7 +60,6 @@ IMPORTANT RULES:
     Instagram
     LinkedIn
     X (Twitter)
-    TikTok
     Pinterest
     Threads
     YouTube
@@ -78,11 +77,11 @@ IMPORTANT RULES:
 
 16. schedule time MUST use 24-hour HH:MM format.
 
-17. timezone MUST be a valid IANA timezone.
+17. timezone must be one of the available worksheet values: Asia/Kolkata, UTC, America/New_York, Europe/London, or Australia/Sydney.
 
-18. status must be either:
-    schedule
-    draft
+18. status must be either Draft or Pending.
+
+18a. Use the exact platform and account/page display values supplied in available_accounts. Each account is tied to a project; only pair it with that project.
 
 19. Do not create dates/times in the past.
 

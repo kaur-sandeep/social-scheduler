@@ -56,7 +56,7 @@ class PostImportService
         };
         if ($platform === 'instagram' && ! $contentType) throw new \InvalidArgumentException('Instagram Content Type is required: select Image Post, Carousel, or Reel.');
         if ($platform !== 'instagram' && $contentType) throw new \InvalidArgumentException('Instagram Content Type can only be used when Platform is Instagram.');
-        $accountPage = preg_replace('/^(?:Facebook|Instagram|LinkedIn|X \(Twitter\)|TikTok|Pinterest|Threads|YouTube) — /u', '', $row['account/page']) ?? $row['account/page'];
+        $accountPage = preg_replace('/^(?:Facebook|Instagram|LinkedIn|X \(Twitter\)|TikTok|Pinterest|Threads|YouTube) (?:—|\x{00E2}\x{20AC}\x{201D}) /u', '', $row['account/page']) ?? $row['account/page'];
         $page = SocialPage::query()->whereHas('account', fn ($q) => $q->where('user_id', $user->id)->where('project_id', $project->id)->where('status', 'active'))->where(fn ($q) => $q->where('page_name', $accountPage)->orWhere('instagram_username', ltrim($accountPage, '@')))->first();
         if (! $page || ($page->provider !== $platform && ! ($platform === 'instagram' && $page->instagram_business_id))) throw new \InvalidArgumentException('Connected account/page is unavailable for this platform.');
         $limits = ['instagram' => 2200, 'linkedin' => 3000, 'twitter' => 280];

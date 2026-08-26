@@ -23,6 +23,8 @@ use Illuminate\Support\Facades\Log;
 use App\Models\Project;
 class PostImportController extends Controller
 {
+    private const ACCOUNT_SEPARATOR = "\xE2\x80\x94";
+
     public function index(Request $request, ProjectRepository $projects)
     {
         return view('posts.imports.index', ['imports' => PostImport::where('user_id', $request->user()->id)->latest()->paginate(15), 'projects' => $projects->projectsFor($request->user()), 'pages' => SocialPage::query()->whereHas('account', fn ($q) => $q->where('user_id', $request->user()->id)->where('status', 'active'))->orderBy('provider')->orderBy('page_name')->get()]);
@@ -51,6 +53,8 @@ class PostImportController extends Controller
 
     public function template(Request $request, ProjectRepository $projects)
     {
+        return Excel::download(new AiPostExport([], $projects->projectsFor($request->user())->pluck('name')->values()->all(), $this->accountOptions($request->user())), 'social-post-import-template.xlsx');
+
         $book = new Spreadsheet(); $sheet = $book->getActiveSheet(); $sheet->setTitle('Posts');
         $headings = ['Project', 'Platform', 'Instagram Content Type', 'Account/Page', 'Content', 'Media URL', 'Schedule Date', 'Schedule Time', 'Timezone', 'Status'];
         $sheet->fromArray($headings, null, 'A1'); $sheet->freezePane('A2');
@@ -81,6 +85,35 @@ class PostImportController extends Controller
             'youtube' => 'YouTube',
             default => ucfirst($provider),
         };
+    }
+
+    private function accountOptions($user): array
+    {
+        return collect($this->aiAccountOptions($user))->pluck('account')->unique()->values()->all();
+    }
+
+    private function aiAccountOptions($user): array
+    {
+        return SocialPage::query()
+            ->with('account.project')
+            ->whereHas('account', fn ($query) => $query->where('user_id', $user->id)->where('status', 'active'))
+            ->orderBy('provider')->orderBy('page_name')->get()
+            ->flatMap(function (SocialPage $page) {
+                $project = $page->account?->project?->name;
+                $account = $page->provider === 'instagram' && $page->instagram_username ? '@'.$page->instagram_username : $page->page_name;
+                $options = $project && $account ? [[
+                    'project' => $project,
+                    'platform' => $page->provider,
+                    'account' => self::platformLabel($page->provider).' — '.$account,
+                ]] : [];
+                if ($project && $page->instagram_business_id && $page->instagram_username && $page->provider !== 'instagram') {
+                    $options[] = ['project' => $project, 'platform' => 'instagram', 'account' => 'Instagram — @'.$page->instagram_username];
+                }
+                return $options;
+            })->map(function (array $option) {
+                $option['account'] = str_replace("\xC3\xA2\xE2\x82\xAC\xE2\x80\x9D", self::ACCOUNT_SEPARATOR, $option['account']);
+                return $option;
+            })->unique(fn (array $option) => strtolower($option['project'].'|'.$option['platform'].'|'.$option['account']))->values()->all();
     }
         public function generateAiBulkPosts(
             Request $request,
@@ -140,6 +173,11 @@ class PostImportController extends Controller
                 ->values()
                 ->all();
 
+            $accounts = $this->aiAccountOptions($user);
+            if (empty($accounts)) {
+                return response()->json(['success' => false, 'message' => 'Connect an active social account before generating import-ready posts.'], 422);
+            }
+
             /*
             * Social accounts are optional for AI generation.
             *
@@ -161,6 +199,14 @@ class PostImportController extends Controller
                         'accounts' => $accounts,
                     ]
                 );
+
+                $posts = array_map(function (array $post): array {
+                    if (isset($post['account/page'])) {
+                        $post['account/page'] = str_replace("\xC3\xA2\xE2\x82\xAC\xE2\x80\x9D", self::ACCOUNT_SEPARATOR, (string) $post['account/page']);
+                    }
+
+                    return $post;
+                }, $posts);
 
                 if (empty($posts)) {
                     throw new \RuntimeException(
@@ -192,7 +238,7 @@ class PostImportController extends Controller
                 * Create Excel file.
                 */
                 Excel::store(
-                    new AiPostExport($posts),
+                    new AiPostExport($posts, $projects, $this->accountOptions($user)),
                     $path,
                     'public'
                 );
@@ -240,7 +286,6 @@ class PostImportController extends Controller
                 'instagram',
                 'linkedin',
                 'twitter',
-                'tiktok',
                 'pinterest',
                 'threads',
                 'youtube',
@@ -253,6 +298,7 @@ class PostImportController extends Controller
             $availableAccounts = collect($accounts)
                 ->map(function ($account) {
                     return [
+                        'project' => mb_strtolower(trim((string) $account['project'])),
                         'platform' => mb_strtolower(
                             trim((string) $account['platform'])
                         ),
@@ -269,6 +315,8 @@ class PostImportController extends Controller
 
                 $required = [
                     'project',
+                    'platform',
+                    'account/page',
                     'content',
                     'schedule date',
                     'schedule time',
@@ -312,10 +360,14 @@ class PostImportController extends Controller
                     $platform = 'twitter';
                 }
 
-                if ($platform !== '' && ! in_array($platform, $allowedPlatforms, true)) {
+                if (! in_array($platform, $allowedPlatforms, true)) {
                     throw new \RuntimeException(
                         "AI generated row {$row}: unsupported platform."
                     );
+                }
+
+                if (! collect($availableAccounts)->contains(fn (array $account) => $account['project'] === mb_strtolower(trim($post['project'])) && $account['platform'] === $platform && $account['account'] === mb_strtolower(trim($post['account/page'])))) {
+                    throw new \RuntimeException("AI generated row {$row}: account/page is unavailable for the selected project and platform.");
                 }
 
                 /*
@@ -335,7 +387,6 @@ class PostImportController extends Controller
                     if (! in_array(
                         $contentType,
                         [
-                            '',
                             'image post',
                             'image',
                             'carousel',
@@ -376,16 +427,14 @@ class PostImportController extends Controller
                 /*
                 * Timezone.
                 */
-                if (
-                    ! in_array(
-                        $post['timezone'],
-                        timezone_identifiers_list(),
-                        true
-                    )
-                ) {
+                if (! in_array($post['timezone'], ['Asia/Kolkata', 'UTC', 'America/New_York', 'Europe/London', 'Australia/Sydney'], true)) {
                     throw new \RuntimeException(
                         "AI generated row {$row}: invalid timezone."
                     );
+                }
+
+                if (! in_array(strtolower(trim($post['status'])), ['draft', 'pending'], true)) {
+                    throw new \RuntimeException("AI generated row {$row}: invalid status.");
                 }
 
                 /*
