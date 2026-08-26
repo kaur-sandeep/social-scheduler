@@ -9,6 +9,7 @@ use Illuminate\Validation\Rule;
 use Illuminate\Validation\Validator;
 use App\Models\SocialPage;
 use App\Models\Project;
+use App\Support\PlatformContentPolicy;
 
 class StorePostRequest extends FormRequest
 {
@@ -32,7 +33,7 @@ class StorePostRequest extends FormRequest
             'publishes' => ['required', 'array', 'min:1'],
             'publishes.*.action' => ['required', Rule::in(['draft', 'schedule', 'publish'])],
             'publishes.*.message' => ['required', 'string', 'max:63206', function (string $attribute, mixed $value, \Closure $fail): void {
-                $limit = match ($this->input('platform')) { 'instagram' => 2200, 'linkedin' => 3000, 'twitter' => 280, default => 63206 };
+                $limit = PlatformContentPolicy::characterLimit((string) $this->input('platform'));
                 if (mb_strlen($value) > $limit) $fail("The caption exceeds the {$limit}-character limit for the selected platform.");
             }],
             'publishes.*.scheduled_date' => ['nullable', 'date'],

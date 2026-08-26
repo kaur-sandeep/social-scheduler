@@ -57,7 +57,12 @@ class PostImportService
         if ($platform === 'instagram' && ! $contentType) throw new \InvalidArgumentException('Instagram Content Type is required: select Image Post, Carousel, or Reel.');
         if ($platform !== 'instagram' && $contentType) throw new \InvalidArgumentException('Instagram Content Type can only be used when Platform is Instagram.');
         $accountPage = preg_replace('/^(?:Facebook|Instagram|LinkedIn|X \(Twitter\)|TikTok|Pinterest|Threads|YouTube) (?:—|\x{00E2}\x{20AC}\x{201D}) /u', '', $row['account/page']) ?? $row['account/page'];
-        $page = SocialPage::query()->whereHas('account', fn ($q) => $q->where('user_id', $user->id)->where('project_id', $project->id)->where('status', 'active'))->where(fn ($q) => $q->where('page_name', $accountPage)->orWhere('instagram_username', ltrim($accountPage, '@')))->first();
+        $accountPage = $this->accountName($accountPage);
+        $page = SocialPage::query()
+            ->whereHas('account', fn ($q) => $q->where('user_id', $user->id)->where('project_id', $project->id)->where('status', 'active'))
+            ->get()
+            ->first(fn (SocialPage $page) => $this->accountName($page->page_name) === $accountPage
+                || $this->accountName('@'.($page->instagram_username ?? '')) === $accountPage);
         if (! $page || ($page->provider !== $platform && ! ($platform === 'instagram' && $page->instagram_business_id))) throw new \InvalidArgumentException('Connected account/page is unavailable for this platform.');
         $limits = ['instagram' => 2200, 'linkedin' => 3000, 'twitter' => 280];
         if (mb_strlen($row['content']) > ($limits[$platform] ?? 63206)) throw new \InvalidArgumentException('Content exceeds the platform character limit.');
@@ -66,6 +71,23 @@ class PostImportService
         if ($scheduled->lessThanOrEqualTo(now($row['timezone']))) throw new \InvalidArgumentException('Schedule time is in the past.');
         foreach ($this->mediaUrls($row['media url']) as $url) if (! filter_var($url, FILTER_VALIDATE_URL) || ! in_array(strtolower((string) parse_url($url, PHP_URL_HOST)), ['dropbox.com', 'www.dropbox.com', 'dl.dropboxusercontent.com'], true)) throw new \InvalidArgumentException('Each Media URL must be a valid Dropbox URL.');
         return ['project_id' => $project->id, 'social_page_id' => $page->id, 'platform' => $platform, 'content_type' => $contentType, 'message' => $row['content'], 'scheduled_date' => $scheduled->toDateString(), 'scheduled_time' => $scheduled->format('H:i'), 'scheduled_at' => $scheduled->utc(), 'timezone' => $row['timezone'], 'action' => strtolower($row['status']) === 'draft' ? 'draft' : 'schedule'];
+    }
+
+    private function accountName(?string $label): string
+    {
+        $label = str_replace(
+            ["\xC3\xA2\xE2\x82\xAC\xE2\x80\x9D", "\xC2\xA0"],
+            ["\xE2\x80\x94", ' '],
+            (string) $label
+        );
+        $label = trim((string) preg_replace('/\s+/u', ' ', $label));
+        $withoutPlatform = preg_replace(
+            '/^(?:Facebook|Instagram|LinkedIn|X \(Twitter\)|TikTok|Pinterest|Threads|YouTube)\s+—\s+/iu',
+            '',
+            $label
+        );
+
+        return mb_strtolower(trim($withoutPlatform ?? $label));
     }
 
     private function downloadMedia(string $urls): array

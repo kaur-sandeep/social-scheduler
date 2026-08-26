@@ -19,6 +19,7 @@ use PhpOffice\PhpSpreadsheet\Style\NumberFormat;
 use PhpOffice\PhpSpreadsheet\Spreadsheet;
 use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
 use App\Services\AiPostGeneratorService;
+use App\Support\PlatformContentPolicy;
 use Illuminate\Support\Facades\Log;
 use App\Models\Project;
 class PostImportController extends Controller
@@ -220,7 +221,8 @@ class PostImportController extends Controller
                 $this->validateAiPosts(
                     $posts,
                     $projects,
-                    $accounts
+                    $accounts,
+                    $request->prompt
                 );
 
                 /*
@@ -276,9 +278,10 @@ class PostImportController extends Controller
         }
 
         private function validateAiPosts(
-            array $posts,
+            array &$posts,
             array $projects,
-            array $accounts
+            array $accounts,
+            string $userPrompt
         ): void {
 
             $allowedPlatforms = [
@@ -309,7 +312,18 @@ class PostImportController extends Controller
                 })
                 ->all();
 
-            foreach ($posts as $index => $post) {
+            foreach ($posts as $index => &$post) {
+
+                $originalContent = (string) ($post['content'] ?? '');
+                $post = PlatformContentPolicy::preparePost($post, $userPrompt, $index);
+                if ($post['content'] !== $originalContent) {
+                    Log::info('AI post content normalized for platform requirements.', [
+                        'row' => $index + 1,
+                        'platform' => $post['platform'] ?? null,
+                        'original_length' => mb_strlen($originalContent),
+                        'final_length' => mb_strlen($post['content']),
+                    ]);
+                }
 
                 $row = $index + 1;
 
@@ -354,11 +368,7 @@ class PostImportController extends Controller
                 /*
                 * Normalize platform.
                 */
-              $platform = strtolower(trim((string) ($post['platform'] ?? '')));
-
-                if ($platform === 'x' || $platform === 'x (twitter)') {
-                    $platform = 'twitter';
-                }
+                $platform = PlatformContentPolicy::normalizePlatform((string) ($post['platform'] ?? ''));
 
                 if (! in_array($platform, $allowedPlatforms, true)) {
                     throw new \RuntimeException(
@@ -409,16 +419,14 @@ class PostImportController extends Controller
                 /*
                 * Content limits.
                 */
-                $limits = [
-                    'instagram' => 2200,
-                    'linkedin' => 3000,
-                    'twitter' => 280,
-                ];
-
-                if (
-                    isset($limits[$platform]) &&
-                    mb_strlen($post['content']) > $limits[$platform]
-                ) {
+                $limit = PlatformContentPolicy::characterLimit($platform);
+                if (mb_strlen($post['content']) > $limit) {
+                    Log::warning('AI content exceeded the platform character limit after normalization.', [
+                        'row' => $row,
+                        'platform' => $platform,
+                        'length' => mb_strlen($post['content']),
+                        'limit' => $limit,
+                    ]);
                     throw new \RuntimeException(
                         "AI generated row {$row}: content exceeds {$platform} character limit."
                     );

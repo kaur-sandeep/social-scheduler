@@ -2,6 +2,8 @@
 
 namespace App\Services;
 
+use App\Support\PlatformContentPolicy;
+use Carbon\Carbon;
 use Illuminate\Support\Facades\Http;
 use RuntimeException;
 
@@ -79,18 +81,18 @@ IMPORTANT RULES:
 
 17. timezone must be one of the available worksheet values: Asia/Kolkata, UTC, America/New_York, Europe/London, or Australia/Sydney.
 
-18. status must be either Draft or Pending.
+18. status must be Pending unless the user explicitly requests Draft.
 
 18a. Use the exact platform and account/page display values supplied in available_accounts. Each account is tied to a project; only pair it with that project.
 
 19. Do not create dates/times in the past.
 
+19a. When the user says "tomorrow", calculate it using the requested timezone. If no timezone is supplied, use Asia/Kolkata. Schedule generated posts on consecutive dates beginning tomorrow.
+
 20. Generate high-quality social media content according to the user's requested tone, topic and platform.
 
-21. Respect platform character limits:
-    Instagram: 2200 characters
-    LinkedIn: 3000 characters
-    X (Twitter): 280 characters
+21. Apply these platform-specific rules:
+RULES_PLACEHOLDER
 
 22. Do not include markdown around the JSON.
 
@@ -101,11 +103,21 @@ IMPORTANT RULES:
 25. The generated Excel will later be reviewed by the user, who will add media URLs manually.
 PROMPT;
 
+        $systemPrompt = str_replace(
+            'RULES_PLACEHOLDER',
+            PlatformContentPolicy::generationRules(),
+            $systemPrompt
+        );
+
         $userMessage = [
             'user_request' => $userPrompt,
             'available_projects' => $context['projects'] ?? [],
             'available_accounts' => $context['accounts'] ?? [],
-            'current_date' => now()->toDateString(),
+            // Relative dates such as "tomorrow" must use the requested/default
+            // scheduling timezone, never the server's configured timezone.
+            'current_date' => Carbon::now('Asia/Kolkata')->toDateString(),
+            'current_datetime' => Carbon::now('Asia/Kolkata')->toIso8601String(),
+            'default_timezone_for_relative_dates' => 'Asia/Kolkata',
         ];
 
         $userContent = json_encode(
