@@ -545,8 +545,8 @@ body {
 .preview-media-file { background: #101828; display: block; height: 150px; min-width: 0; object-fit: contain; width: 100%; }
 .preview-media.single-media .preview-media-file { height: 260px; }
 .video-thumbnail-control { align-items: center; display: flex; flex-wrap: wrap; gap: 6px; }
-.thumbnail-preview { border: 1px solid #d0d5dd; border-radius: 6px; display: inline-flex; height: 52px; overflow: hidden; width: 72px; }
-.thumbnail-preview img { height: 100%; object-fit: cover; width: 100%; }
+.thumbnail-preview { background: #f8fafc; border: 1px solid #d0d5dd; border-radius: 6px; display: inline-flex; flex: 0 0 130px; height: 62px; overflow: hidden; width: 130px; }
+.thumbnail-preview .selected-thumbnail-image { display: block; height: 62px !important; max-width: none; object-fit: contain; width: 130px !important; }
 .upload-media-notes { line-height: 1.45; }
 .upload-media-notes ul { margin: 4px 0 0; padding-left: 18px; }
 

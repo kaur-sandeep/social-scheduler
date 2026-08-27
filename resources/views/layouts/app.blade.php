@@ -8,7 +8,7 @@
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
     @stack('styles')
-    <link href="{{ asset('css/social-scheduler.css') }}" rel="stylesheet">
+    <link href="{{ asset('css/social-scheduler.css') }}?v={{ filemtime(public_path('css/social-scheduler.css')) }}" rel="stylesheet">
 </head>
 <body>
 <div class="app-shell">

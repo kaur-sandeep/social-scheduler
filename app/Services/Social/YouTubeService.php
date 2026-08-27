@@ -60,7 +60,19 @@ class YouTubeService
         if (! $video) throw new RuntimeException('YouTube publishing requires one video.');
         $token = $this->accessToken($page->account);
         $response = $this->client->uploadVideo($post, $token, $video->path, ['snippet' => ['title' => Str::limit($post->message, 100, ''), 'description' => $post->message, 'categoryId' => '22'], 'status' => ['privacyStatus' => config('google.youtube_privacy'), 'selfDeclaredMadeForKids' => false]]);
-        if ($video->thumbnail_path) $this->client->setThumbnail($post, $token, (string) $response['id'], $video->thumbnail_path);
+        if ($video->thumbnail_path) {
+            try {
+                $this->client->setThumbnail($post, $token, (string) $response['id'], $video->thumbnail_path);
+            } catch (\Throwable $e) {
+                // Custom-thumbnail access is granted per YouTube channel. Do
+                // not mark an already uploaded video as failed when it is off.
+                \Illuminate\Support\Facades\Log::warning('YouTube video was published without its custom thumbnail.', [
+                    'post_id' => $post->id,
+                    'video_id' => $response['id'] ?? null,
+                    'error' => $e->getMessage(),
+                ]);
+            }
+        }
 
         return $response;
     }
