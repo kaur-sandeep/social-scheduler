@@ -57,7 +57,7 @@ class PostImportController extends Controller
         return Excel::download(new AiPostExport([], $projects->projectsFor($request->user())->pluck('name')->values()->all(), $this->accountOptions($request->user())), 'social-post-import-template.xlsx');
 
         $book = new Spreadsheet(); $sheet = $book->getActiveSheet(); $sheet->setTitle('Posts');
-        $headings = ['Project', 'Platform', 'Instagram Content Type', 'Account/Page', 'Content', 'Media URL', 'Schedule Date', 'Schedule Time', 'Timezone', 'Status'];
+        $headings = ['Project', 'Platform', 'Instagram Content Type', 'Account/Page', 'Content', 'Media URL', 'Thumbnail URL', 'Schedule Date', 'Schedule Time', 'Timezone', 'Status'];
         $sheet->fromArray($headings, null, 'A1'); $sheet->freezePane('A2');
         $sheet->getStyle('A1:J1')->getFont()->setBold(true); $sheet->getStyle('A1:J1')->getFill()->setFillType('solid')->getStartColor()->setRGB('D9EAF7');
         foreach (range('A', 'J') as $column) $sheet->getColumnDimension($column)->setWidth($column === 'E' ? 48 : 22);
@@ -384,6 +384,7 @@ class PostImportController extends Controller
                 * Media MUST remain empty.
                 */
                 $post['media url'] = '';
+                $post['thumbnail url'] = '';
 
                 /*
                 * Instagram content type.

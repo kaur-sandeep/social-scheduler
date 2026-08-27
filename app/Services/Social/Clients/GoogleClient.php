@@ -61,6 +61,28 @@ class GoogleClient extends LoggedHttpClient
         return $body;
     }
 
+    public function setThumbnail(Post $post, string $token, string $videoId, string $path): array
+    {
+        $absolutePath = Storage::disk('public')->path($path);
+        if (! is_file($absolutePath)) throw new SocialApiException('Video thumbnail is unavailable.');
+
+        $mime = mime_content_type($absolutePath) ?: 'image/jpeg';
+        $startedAt = microtime(true);
+        $handle = fopen($absolutePath, 'r');
+        try {
+            $response = Http::acceptJson()->withToken($token)->withBody($handle, $mime)
+                ->post(config('google.youtube_thumbnail_upload_url').'?videoId='.urlencode($videoId));
+        } finally {
+            fclose($handle);
+        }
+
+        $body = $response->json() ?? ['body' => $response->body()];
+        $this->log($post, config('google.youtube_thumbnail_upload_url'), ['video_id' => $videoId, 'thumbnail_path' => $path], $body, $response->status(), $startedAt);
+        if ($response->failed()) throw new SocialApiException($this->errorMessage($body), $response->status());
+
+        return $body;
+    }
+
     private function tokenRequest(array $payload): array
     {
         $response = Http::asForm()->acceptJson()->post('https://oauth2.googleapis.com/token', $payload + ['client_id' => config('google.client_id'), 'client_secret' => config('google.client_secret')]);

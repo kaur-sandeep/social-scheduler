@@ -9,9 +9,9 @@ use Illuminate\Support\Str;
 
 class MediaService
 {
-    public function attachUploads(Post $post, array $uploads): void
+    public function attachUploads(Post $post, array $uploads, array $thumbnails = []): void
     {
-        foreach (array_values($uploads) as $index => $upload) {
+        foreach ($uploads as $index => $upload) {
             if (! $upload instanceof UploadedFile) {
                 continue;
             }
@@ -22,11 +22,20 @@ class MediaService
                 Str::uuid().'.'.$upload->getClientOriginalExtension(),
                 'public'
             );
+            $thumbnail = $thumbnails[$index] ?? null;
+            $thumbnailPath = $type === 'image' ? $path : null;
+            if ($type === 'video' && $thumbnail instanceof UploadedFile) {
+                $thumbnailPath = $thumbnail->storeAs(
+                    'posts/'.$post->id.'/thumbnails',
+                    Str::uuid().'.'.$thumbnail->getClientOriginalExtension(),
+                    'public'
+                );
+            }
 
             $post->media()->create([
                 'media_type' => $type,
                 'path' => $path,
-                'thumbnail_path' => $type === 'image' ? $path : null,
+                'thumbnail_path' => $thumbnailPath,
                 'mime_type' => (string) $upload->getMimeType(),
                 'file_size' => $upload->getSize() ?: 0,
                 'display_order' => $index,

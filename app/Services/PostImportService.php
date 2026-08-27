@@ -15,7 +15,7 @@ use Illuminate\Support\Facades\Log;
 
 class PostImportService
 {
-    private const HEADERS = ['project', 'platform', 'instagram content type', 'account/page', 'content', 'media url', 'schedule date', 'schedule time', 'timezone', 'status'];
+    private const HEADERS = ['project', 'platform', 'instagram content type', 'account/page', 'content', 'media url', 'thumbnail url', 'schedule date', 'schedule time', 'timezone', 'status'];
 
     public function processRow(PostImport $import, int $rowNumber, array $row): void
     {
@@ -23,13 +23,14 @@ class PostImportService
         try {
             $data = $this->validateRow($import->user, $row);
             $files = $this->downloadMedia($row['media url']);
+            $thumbnails = $this->downloadThumbnails($row['thumbnail url'], $files);
             $this->validateMediaForPlatform($data['platform'], $data['content_type'], $files);
             if (Post::query()->where('user_id', $import->user_id)->where('project_id', $data['project_id'])->where('platform', $data['platform'])->where('message', $data['message'])->where('scheduled_at', $data['scheduled_at'])->exists()) {
                 $this->error($import, $rowNumber, $row, 'Duplicate post skipped.');
                 $import->increment('skipped_rows');
                 return;
             }
-            app(PostService::class)->create($import->user, $data + ['media' => $files]);
+            app(PostService::class)->create($import->user, $data + ['media' => $files, 'thumbnails' => $thumbnails]);
             $import->increment('successful_rows');
         } catch (\Throwable $e) {
             Log::warning('Post import row failed', ['import_id' => $import->id, 'row' => $rowNumber, 'error' => $e->getMessage()]);
@@ -42,7 +43,7 @@ class PostImportService
 
     private function validateRow(User $user, array $row): array
     {
-        foreach (self::HEADERS as $required) if (! in_array($required, ['media url', 'instagram content type'], true) && $row[$required] === '') throw new \InvalidArgumentException(ucwords($required).' is required.');
+        foreach (self::HEADERS as $required) if (! in_array($required, ['media url', 'thumbnail url', 'instagram content type'], true) && $row[$required] === '') throw new \InvalidArgumentException(ucwords($required).' is required.');
         $project = Project::query()->where('user_id', $user->id)->where('name', $row['project'])->first();
         if (! $project) throw new \InvalidArgumentException('Project does not exist or is not available to you.');
         $platform = strtolower($row['platform']) === 'x (twitter)' || strtolower($row['platform']) === 'x' ? 'twitter' : strtolower($row['platform']);
@@ -70,6 +71,7 @@ class PostImportService
         try { $scheduled = Carbon::createFromFormat('!Y-m-d H:i', $row['schedule date'].' '.$row['schedule time'], $row['timezone']); } catch (\Throwable) { throw new \InvalidArgumentException('Schedule Date must be YYYY-MM-DD and Schedule Time must be HH:MM.'); }
         if ($scheduled->lessThanOrEqualTo(now($row['timezone']))) throw new \InvalidArgumentException('Schedule time is in the past.');
         foreach ($this->mediaUrls($row['media url']) as $url) if (! filter_var($url, FILTER_VALIDATE_URL) || ! in_array(strtolower((string) parse_url($url, PHP_URL_HOST)), ['dropbox.com', 'www.dropbox.com', 'dl.dropboxusercontent.com'], true)) throw new \InvalidArgumentException('Each Media URL must be a valid Dropbox URL.');
+        foreach ($this->mediaUrls($row['thumbnail url']) as $url) if (! filter_var($url, FILTER_VALIDATE_URL) || ! in_array(strtolower((string) parse_url($url, PHP_URL_HOST)), ['dropbox.com', 'www.dropbox.com', 'dl.dropboxusercontent.com'], true)) throw new \InvalidArgumentException('Each Thumbnail URL must be a valid Dropbox URL.');
         return ['project_id' => $project->id, 'social_page_id' => $page->id, 'platform' => $platform, 'content_type' => $contentType, 'message' => $row['content'], 'scheduled_date' => $scheduled->toDateString(), 'scheduled_time' => $scheduled->format('H:i'), 'scheduled_at' => $scheduled->utc(), 'timezone' => $row['timezone'], 'action' => strtolower($row['status']) === 'draft' ? 'draft' : 'schedule'];
     }
 
@@ -93,6 +95,34 @@ class PostImportService
     private function downloadMedia(string $urls): array
     {
         return array_map(fn (string $url) => $this->downloadMediaFile($url), $this->mediaUrls($urls));
+    }
+
+    /**
+     * Downloads one thumbnail for each video in the same order as Media URL.
+     * Empty positions (for image media) are allowed by using an empty pipe segment.
+     */
+    private function downloadThumbnails(string $urls, array $media): array
+    {
+        $urls = array_map('trim', explode('|', $urls));
+        while ($urls !== [] && end($urls) === '') array_pop($urls);
+        if ($urls === []) return [];
+        if (count($urls) > count($media)) throw new \InvalidArgumentException('Thumbnail URL cannot contain more entries than Media URL.');
+
+        $thumbnails = [];
+        foreach ($urls as $index => $url) {
+            if ($url === '') continue;
+            $mediaFile = $media[$index] ?? null;
+            if (! $mediaFile || ! str_starts_with((string) $mediaFile->getMimeType(), 'video/')) {
+                throw new \InvalidArgumentException('A Thumbnail URL can only be supplied for the video in the matching Media URL position.');
+            }
+            $thumbnail = $this->downloadMediaFile($url);
+            if (! str_starts_with((string) $thumbnail->getMimeType(), 'image/')) {
+                throw new \InvalidArgumentException('Each Thumbnail URL must point to a JPEG, PNG, GIF, or WebP image.');
+            }
+            $thumbnails[$index] = $thumbnail;
+        }
+
+        return $thumbnails;
     }
 
     private function downloadMediaFile(string $url): UploadedFile

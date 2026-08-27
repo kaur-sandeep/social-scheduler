@@ -27,7 +27,7 @@
                           @endif
                 </div>
                     <div class="review-card-grid"><div><div class="review-caption-label">Content preview</div><p class="text-break review-caption">{{ $post->message }}</p></div><div class="review-meta"><span><i class="bi bi-broadcast"></i> {{ ucfirst($post->platform) }}</span><span><i class="bi bi-person-square"></i> {{ $post->socialPage?->page_name ?? 'Profile' }}</span><span><i class="bi bi-flag"></i> {{ $status }}</span></div></div>
-                    @foreach($post->media as $media)<div class="review-preview-media">@if($media->media_type === 'video')<video controls src="{{ asset('storage/'.$media->path) }}"></video>@else<img src="{{ asset('storage/'.$media->path) }}" alt="Media for post #{{ $index + 1 }}">@endif</div>@endforeach
+                    @foreach($post->media as $media)<div class="review-preview-media">@if($media->media_type === 'video')<video controls @if($media->thumbnail_path) poster="{{ asset('storage/'.$media->thumbnail_path) }}" @endif src="{{ asset('storage/'.$media->path) }}"></video>@else<img src="{{ asset('storage/'.$media->path) }}" alt="Media for post #{{ $index + 1 }}">@endif</div>@endforeach
                     <div class="review-publish-time"><strong>{{ $post->scheduled_at ? 'Scheduled for '. $post->scheduled_at->timezone($post->timezone)->format('d M Y, h:i A T') : ($post->status->value === 'draft' ? 'Saved as draft' : 'Ready to publish after confirmation') }}</strong>@if($post->scheduled_at)<span>UTC: {{ $post->scheduled_at->utc()->format('d M Y, h:i A') }} UTC</span>@endif</div>
                 </article>
             @endforeach

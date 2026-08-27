@@ -59,7 +59,10 @@ class YouTubeService
         $video = $post->media->firstWhere('media_type', 'video');
         if (! $video) throw new RuntimeException('YouTube publishing requires one video.');
         $token = $this->accessToken($page->account);
-        return $this->client->uploadVideo($post, $token, $video->path, ['snippet' => ['title' => Str::limit($post->message, 100, ''), 'description' => $post->message, 'categoryId' => '22'], 'status' => ['privacyStatus' => config('google.youtube_privacy'), 'selfDeclaredMadeForKids' => false]]);
+        $response = $this->client->uploadVideo($post, $token, $video->path, ['snippet' => ['title' => Str::limit($post->message, 100, ''), 'description' => $post->message, 'categoryId' => '22'], 'status' => ['privacyStatus' => config('google.youtube_privacy'), 'selfDeclaredMadeForKids' => false]]);
+        if ($video->thumbnail_path) $this->client->setThumbnail($post, $token, (string) $response['id'], $video->thumbnail_path);
+
+        return $response;
     }
 
     private function accessToken(SocialAccount $account): string

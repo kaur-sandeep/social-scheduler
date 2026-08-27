@@ -152,7 +152,7 @@ class FacebookService
 
         $start = microtime(true);
         $response = $firstMedia
-            ? $this->postMedia($endpoint, $payload, $firstMedia->path)
+            ? $this->postMedia($endpoint, $payload, $firstMedia->path, $firstMedia->media_type === 'video' ? $firstMedia->thumbnail_path : null)
             : $this->http()->asForm()->post($this->baseUrl.$endpoint, $payload);
         $elapsed = (int) ((microtime(true) - $start) * 1000);
         $body = $response->json() ?? [];
@@ -179,7 +179,7 @@ class FacebookService
         return $body;
     }
 
-    private function postMedia(string $endpoint, array $payload, string $storagePath)
+    private function postMedia(string $endpoint, array $payload, string $storagePath, ?string $thumbnailPath = null)
     {
         $absolutePath = Storage::disk('public')->path($storagePath);
 
@@ -194,9 +194,15 @@ class FacebookService
         }
 
         try {
-            return $this->http()
-                ->attach('source', $handle, basename($absolutePath))
-                ->post($this->baseUrl.$endpoint, $payload);
+            $request = $this->http()->attach('source', $handle, basename($absolutePath));
+            $thumbnailAbsolutePath = $thumbnailPath ? Storage::disk('public')->path($thumbnailPath) : null;
+            $thumbnailHandle = $thumbnailAbsolutePath && is_file($thumbnailAbsolutePath) ? fopen($thumbnailAbsolutePath, 'r') : false;
+            try {
+                if ($thumbnailHandle !== false) $request->attach('thumb', $thumbnailHandle, basename($thumbnailAbsolutePath));
+                return $request->post($this->baseUrl.$endpoint, $payload);
+            } finally {
+                if ($thumbnailHandle !== false) fclose($thumbnailHandle);
+            }
         } finally {
             fclose($handle);
         }

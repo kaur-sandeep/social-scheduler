@@ -40,7 +40,7 @@ class PostService
                 'updated_by' => $user->id,
             ]);
 
-            $this->mediaService->attachUploads($post, $data['media'] ?? []);
+            $this->mediaService->attachUploads($post, $data['media'] ?? [], $data['thumbnails'] ?? []);
 
             return $post->refresh();
         });
@@ -89,7 +89,7 @@ class PostService
                 'scheduled_at' => $isScheduled ? $this->scheduledAt($data) : null, 'timezone' => $data['timezone'],
                 'updated_by' => $post->user_id,
             ]);
-            $this->mediaService->attachUploads($post, $data['media'] ?? []);
+            $this->mediaService->attachUploads($post, $data['media'] ?? [], $data['thumbnails'] ?? []);
 
             return $post->refresh();
         });

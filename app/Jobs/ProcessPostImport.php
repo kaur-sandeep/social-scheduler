@@ -26,7 +26,8 @@ class ProcessPostImport implements ShouldQueue
         Log::info('Post import started', ['import_id' => $import->id, 'user_id' => $import->user_id]);
         try {
             $workbook = IOFactory::load(storage_path('app/private/'.$import->file_path));
-            $expectedHeaders = ['project','platform','instagram content type','account/page','content','media url','schedule date','schedule time','timezone','status'];
+            $expectedHeaders = ['project','platform','instagram content type','account/page','content','media url','thumbnail url','schedule date','schedule time','timezone','status'];
+            $legacyHeaders = ['project','platform','instagram content type','account/page','content','media url','schedule date','schedule time','timezone','status'];
             $normalizeHeaders = static function (array $headers): array {
                 $headers = array_map(function ($header): string {
                     $header = str_replace(["\xEF\xBB\xBF", "\xC2\xA0"], ['', ' '], (string) $header);
@@ -46,9 +47,9 @@ class ProcessPostImport implements ShouldQueue
             $sheet = null;
             foreach ($workbook->getWorksheetIterator() as $candidate) {
                 $candidateHeaders = $normalizeHeaders(
-                    $candidate->rangeToArray('A1:J1', null, true, true, false)[0]
+                    $candidate->rangeToArray('A1:K1', null, true, true, false)[0]
                 );
-                if ($candidateHeaders === $expectedHeaders) {
+                if ($candidateHeaders === $expectedHeaders || $candidateHeaders === $legacyHeaders) {
                     $sheet = $candidate;
                     break;
                 }
@@ -57,13 +58,18 @@ class ProcessPostImport implements ShouldQueue
             $sheet ??= $workbook->getActiveSheet();
             $rows = $sheet->toArray(null, true, true, false);
             $headers = $normalizeHeaders($rows[0] ?? []);
-            if ($headers !== $expectedHeaders) {
+            if ($headers !== $expectedHeaders && $headers !== $legacyHeaders) {
                 Log::warning('Post import template headings did not match.', [
                     'import_id' => $import->id,
                     'worksheet' => $sheet->getTitle(),
                     'headings' => $headers,
                 ]);
                 throw new \RuntimeException('The spreadsheet headings do not match the sample template.');
+            }
+            // Keep previously downloaded templates importable; their missing
+            // Thumbnail URL column is treated as empty.
+            if ($headers === $legacyHeaders) {
+                foreach (array_slice(array_keys($rows), 1) as $rowIndex) array_splice($rows[$rowIndex], 6, 0, '');
             }
             $dataRows = array_filter(array_slice($rows, 1), fn ($row) => (bool) array_filter($row, fn ($value) => $value !== null && $value !== ''));
             $import->update(['total_rows' => count($dataRows)]);

@@ -5,6 +5,7 @@ return [
     'client_secret' => env('GOOGLE_CLIENT_SECRET'),
     'redirect_uri' => env('GOOGLE_REDIRECT_URI'),
     'youtube_upload_url' => 'https://www.googleapis.com/upload/youtube/v3/videos',
+    'youtube_thumbnail_upload_url' => 'https://www.googleapis.com/upload/youtube/v3/thumbnails/set',
     'youtube_api_url' => 'https://www.googleapis.com/youtube/v3',
     'youtube_privacy' => env('YOUTUBE_DEFAULT_PRIVACY', 'private'),
     'scopes' => [

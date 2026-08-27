@@ -15,6 +15,7 @@
                     <li>Choose the <em>Account/Page</em> with its social platform shown, for example <code>Facebook — Social Scheduler</code>.</li>
                     <li>For Instagram, select <em>Image Post</em>, <em>Carousel</em>, or <em>Reel</em> in the new <em>Instagram Content Type</em> column. Choose <em>Reel</em> for an MP4 or MOV reel video.</li>
                     <li>For an Instagram carousel, enter 2–10 Dropbox media URLs in <em>Media URL</em>, separated by <code>|</code>.</li>
+                    <li>For videos, optionally add matching Dropbox image URL(s) in <em>Thumbnail URL</em>. Use <code>|</code> between entries; leave an empty position for non-video media. Example: <code>video-1|video-2</code> with <code>cover-1|cover-2</code>.</li>
                     <li>Use <code>YYYY-MM-DD</code> for Schedule Date, for example <code>2026-07-23</code>.</li>
                     <li>Use 24-hour <code>HH:MM</code> for Schedule Time, for example <code>09:00</code> or <code>18:30</code>.</li>
                     <li><strong>LinkedIn:</strong> if you add media, use one JPEG, PNG, or GIF image only; video uploads are not supported.</li>
@@ -36,7 +37,7 @@
                                 <li>Download and review the generated posts.</li>
                                 <li>Create/select your images or videos.</li>
                                 <li>Upload your media to Dropbox.</li>
-                                <li>Add the Dropbox URL(s) in the <strong>Media URL</strong> column.</li>
+                                <li>Add the Dropbox URL(s) in the <strong>Media URL</strong> column and optional video cover image URL(s) in <strong>Thumbnail URL</strong>.</li>
                                 <li>Upload the completed spreadsheet below.</li>
                             </ol>
                         </div>

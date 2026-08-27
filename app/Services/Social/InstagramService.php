@@ -66,6 +66,8 @@ class InstagramService
 
         if ($media->media_type === 'video') {
             $payload += ['media_type' => $isCarouselItem ? 'VIDEO' : 'REELS', 'video_url' => $this->mediaUrl($media->path)];
+            // Meta uses this public image URL as the Reel cover when supported.
+            if (! $isCarouselItem && $media->thumbnail_path) $payload['cover_url'] = $this->mediaUrl($media->thumbnail_path);
         } else {
             $payload += ['media_type' => 'IMAGE', 'image_url' => $this->mediaUrl($media->path)];
         }

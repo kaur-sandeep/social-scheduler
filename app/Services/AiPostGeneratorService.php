@@ -27,6 +27,7 @@ Return ONLY valid JSON in this exact structure:
             "account/page": "",
             "content": "",
             "media url": "",
+            "thumbnail url": "",
             "schedule date": "",
             "schedule time": "",
             "timezone": "",
@@ -53,7 +54,7 @@ IMPORTANT RULES:
 
 8. The user will manually create/select images or videos after downloading the generated Excel file.
 
-9. The user will manually add Dropbox media URLs to the Excel file before importing it.
+9. The user will manually add Dropbox media URLs and optional Dropbox thumbnail URLs to the Excel file before importing it.
 
 10. For X (Twitter), media url MUST remain empty.
 
@@ -98,7 +99,7 @@ RULES_PLACEHOLDER
 
 23. Do not include explanations outside JSON.
 
-24. If the user does not specify a media URL, ALWAYS leave media url empty.
+24. ALWAYS leave media url and thumbnail url empty; the user will add both URLs after download.
 
 25. The generated Excel will later be reviewed by the user, who will add media URLs manually.
 PROMPT;

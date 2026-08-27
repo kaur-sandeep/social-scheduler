@@ -41,7 +41,9 @@ class StorePostRequest extends FormRequest
             'publishes.*.timezone' => ['required', 'timezone'],
             'publishes.*.content_type' => ['nullable', 'required_if:platform,instagram', Rule::in(['image', 'carousel', 'reel'])],
             'publishes.*.media' => ['nullable', 'array', 'max:'.config('social.max_media_files')],
-            'publishes.*.media.*' => ['file', 'mimes:jpg,jpeg,png,webp,gif,mp4,mov,avi,webm', 'max:'.config('social.max_upload_kilobytes')],
+            'publishes.*.media.*' => ['file', 'mimes:jpg,jpeg,png,webp,gif,mp4,mov,avi,webm,m4v,mkv', 'max:'.config('social.max_upload_kilobytes')],
+            'publishes.*.thumbnails' => ['nullable', 'array'],
+            'publishes.*.thumbnails.*' => ['file', 'mimes:jpg,jpeg,png,webp', 'max:'.config('social.max_upload_kilobytes')],
         ];
     }
 
@@ -50,7 +52,17 @@ class StorePostRequest extends FormRequest
         $validator->after(function (Validator $validator): void {
             foreach ($this->input('publishes', []) as $index => $publish) {
                 $media = $this->file("publishes.{$index}.media", []);
+                $thumbnails = $this->file("publishes.{$index}.thumbnails", []);
                 $contentType = $publish['content_type'] ?? null;
+
+                foreach ($thumbnails as $mediaIndex => $thumbnail) {
+                    $source = $media[$mediaIndex] ?? null;
+                    $isVideo = $source && (str_starts_with((string) $source->getMimeType(), 'video/')
+                        || in_array(strtolower($source->getClientOriginalExtension()), ['mp4', 'mov', 'avi', 'webm', 'm4v', 'mkv'], true));
+                    if (! $isVideo) {
+                        $validator->errors()->add("publishes.{$index}.thumbnails.{$mediaIndex}", 'A thumbnail can only be attached to its corresponding video.');
+                    }
+                }
 
                 if ($this->input('platform') === 'instagram' && ! $validator->errors()->has("publishes.{$index}.content_type")) {
                 $isImage = fn ($file): bool => in_array($file->getMimeType(), ['image/jpeg', 'image/png'], true);
