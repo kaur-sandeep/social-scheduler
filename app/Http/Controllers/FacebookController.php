@@ -33,7 +33,9 @@ class FacebookController extends Controller
 
     public function disconnect(SocialAccount $account): RedirectResponse
     {
-        abort_unless($account->user_id === auth()->id(), 403);
+        abort_unless($account->user_id === auth()->id() && $account->provider === 'facebook', 403);
+
+        $account->pages()->update(['status' => 'disconnected']);
 
         $account->update([
             'status' => 'disconnected',

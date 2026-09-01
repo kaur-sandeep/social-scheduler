@@ -14,7 +14,12 @@ class AccountController extends Controller
         $project = $projects->findForUser(request()->user(), (int) request('project_id')) ?? $projects->projectsFor(request()->user())->first();
         return view('accounts.index', [
             'projects' => $projects->projectsFor(request()->user()), 'project' => $project,
-            'accounts' => SocialAccount::with('pages')->where('user_id', auth()->id())->when($project, fn ($q) => $q->where('project_id', $project->id))->latest()->get(),
+            'accounts' => SocialAccount::with(['pages' => fn ($query) => $query->where('status', 'active')])
+                ->where('user_id', auth()->id())
+                ->when($project, fn ($query) => $query->where('project_id', $project->id))
+                ->whereHas('pages', fn ($query) => $query->where('status', 'active'))
+                ->latest()
+                ->get(),
         ]);
     }
 }
