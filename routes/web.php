@@ -25,9 +25,20 @@ Route::middleware('guest')->group(function () {
     Route::get('/login', [AuthController::class, 'create'])->name('login');
     Route::post('/login', [AuthController::class, 'store'])->name('login.store');
 });
+// Route::get('/', function () {
+//     return redirect()->route('login');
+// });
 Route::get('/', function () {
-    return redirect()->route('login');
-});
+    return view('home');
+})->name('home');
+
+Route::get('/terms-and-conditions', function () {
+    return view('legal.terms');
+})->name('terms');
+
+Route::get('/privacy-policy', function () {
+    return view('legal.privacy');
+})->name('privacy');
 Route::middleware('auth')->group(function () {
     Route::post('/logout', [AuthController::class, 'destroy'])->name('logout');
     Route::get('/dashboard', DashboardController::class)->name('dashboard');

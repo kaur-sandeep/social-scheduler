@@ -142,8 +142,18 @@
 
             <b>Step 6:</b> Add your Authorized Redirect URI.<br><br>
 
-            <b>Step 7:</b> Copy the <b>Client ID</b> and <b>Client Secret</b>.
-            '
+            <b>Step 7:</b> Copy the <b>Client ID</b> and <b>Client Secret</b><br><br>
+
+            <strong>To enable thumbnails please do below steps</strong><hr>
+             <b>Step 1:</b>Open YouTube Studio<br><br>
+
+            <b>Step 2:</b> Go to Settings → Channel → Feature eligibility<br><br>
+
+            <b>Step 3:</b> Enable Intermediate features by verifying your phone number (or complete identity verification if YouTube requests it)<br><br>
+
+            <b>Step 4:</b> Check that the channel has no active Community Guidelines restriction<br><br>
+
+            <b>Step 5:</b> Disconnect and reconnect YouTube in the scheduler, then publish again<br>'
 
             ];
             $defaultRedirectUrls = [
