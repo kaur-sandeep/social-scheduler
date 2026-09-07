@@ -163,6 +163,32 @@
         background: #fff;
     }
 
+    .platforms {
+        background: #f8f9fc;
+    }
+
+    .platform-list {
+        display: flex;
+        justify-content: center;
+        flex-wrap: wrap;
+        gap: 12px;
+    }
+
+    .platform-pill {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 11px 16px;
+        background: #fff;
+        border: 1px solid #eaecf0;
+        border-radius: 999px;
+        color: #344054;
+        font-size: 14px;
+        font-weight: 700;
+    }
+
+    .platform-pill.youtube { color: #c00; border-color: #fecaca; }
+
     .feature-grid {
         display: grid;
         grid-template-columns: repeat(3, 1fr);
@@ -432,6 +458,22 @@
             </div>
         </div>
 
+    </div>
+</section>
+
+<section class="section platforms" aria-labelledby="supported-platforms">
+    <div class="container">
+        <div class="section-heading">
+            <h2 id="supported-platforms">Supported Platforms</h2>
+            <p>Plan, create and schedule content for your connected social media accounts.</p>
+        </div>
+        <div class="platform-list" aria-label="Supported social media platforms">
+            <span class="platform-pill">Facebook</span>
+            <span class="platform-pill">Instagram</span>
+            <span class="platform-pill">LinkedIn</span>
+            <span class="platform-pill">TikTok</span>
+            <span class="platform-pill youtube"><span aria-hidden="true">▶</span> YouTube</span>
+        </div>
     </div>
 </section>
 

@@ -8,6 +8,7 @@ use App\Repositories\SocialAccountRepository;
 use App\Services\Social\Clients\GoogleClient;
 use App\Services\Social\Concerns\InteractsWithPosts;
 use Illuminate\Support\Facades\URL;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 use RuntimeException;
 
@@ -75,6 +76,32 @@ class YouTubeService
         }
 
         return $response;
+    }
+
+    public function disconnect(SocialAccount $account): void
+    {
+        // Prefer the refresh token because it revokes the durable grant. A
+        // missing or expired token should never prevent local removal.
+        $token = $account->refresh_token ?: $account->user_access_token;
+        if ($token) {
+            try {
+                $this->client->revokeToken($token);
+            } catch (\Throwable $exception) {
+                Log::warning('Unable to revoke YouTube authorization while disconnecting.', [
+                    'social_account_id' => $account->id,
+                    'status' => $exception->getCode(),
+                ]);
+            }
+        }
+
+        $account->pages()->delete();
+        $account->update([
+            'user_access_token' => null,
+            'refresh_token' => null,
+            'token_expires_at' => null,
+            'status' => 'disconnected',
+            'disconnected_at' => now(),
+        ]);
     }
 
     private function accessToken(SocialAccount $account): string

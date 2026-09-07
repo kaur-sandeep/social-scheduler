@@ -89,6 +89,15 @@ class StorePostRequest extends FormRequest
                         $validator->errors()->add("publishes.{$index}.media", 'A TikTok post requires exactly one MP4, MOV, or WebM video.');
                     }
                 }
+
+                if ($this->input('platform') === 'youtube') {
+                    $isYouTubeVideo = fn ($file): bool => str_starts_with((string) $file->getMimeType(), 'video/')
+                        || in_array(strtolower($file->getClientOriginalExtension()), ['mp4', 'mov', 'avi', 'webm', 'm4v', 'mkv'], true);
+
+                    if (count($media) !== 1 || ! $isYouTubeVideo($media[0])) {
+                        $validator->errors()->add("publishes.{$index}.media", 'A YouTube post requires exactly one video file.');
+                    }
+                }
             }
 
             foreach ($this->input('publishes', []) as $index => $publish) {

@@ -78,6 +78,12 @@
         margin-top: 0;
     }
 
+    .legal-content h3 {
+        color: #344054;
+        font-size: 17px;
+        margin: 26px 0 10px;
+    }
+
     .legal-content p {
         color: #667085;
         font-size: 15px;
@@ -169,6 +175,7 @@
         <a href="#introduction">Introduction</a>
         <a href="#information">Information We Collect</a>
         <a href="#social-data">Social Media Data</a>
+        <a href="#youtube-api-services">YouTube API Services</a>
         <a href="#use">How We Use Information</a>
         <a href="#ai">AI Processing</a>
         <a href="#cookies">Cookies</a>
@@ -251,8 +258,91 @@
             </p>
         </section>
 
+        <section id="youtube-api-services">
+            <h2>4. YouTube API Services</h2>
+
+            <p>
+                Social Scheduler uses YouTube API Services to allow users to
+                connect and manage their own YouTube channels through the
+                Social Scheduler platform.
+            </p>
+
+            <h3>YouTube Account Connection</h3>
+            <p>
+                Users may connect their YouTube channel to Social Scheduler
+                using Google's OAuth 2.0 authorization process. When a user
+                chooses to connect YouTube, they are redirected to Google to
+                authorize the requested permissions. Social Scheduler only
+                accesses YouTube data necessary to provide the requested
+                functionality.
+            </p>
+
+            <h3>YouTube Data We Access</h3>
+            <p>Depending on the features used, we may access:</p>
+            <ul>
+                <li>YouTube channel information needed to identify the connected channel.</li>
+                <li>Video files and the post text needed to upload and schedule videos requested by the user.</li>
+                <li>Thumbnail files when a user chooses to attach one to a video.</li>
+                <li>OAuth authorization credentials needed to perform authorized actions on the user's behalf.</li>
+            </ul>
+            <p>Social Scheduler does not request access to a YouTube account without the user's authorization.</p>
+
+            <h3>How We Use YouTube Data</h3>
+            <p>YouTube API data is used only to provide features requested by the user, including:</p>
+            <ul>
+                <li>Connecting the user's YouTube channel to Social Scheduler.</li>
+                <li>Uploading and scheduling videos for publishing.</li>
+                <li>Using post text as the uploaded video's title and description.</li>
+                <li>Setting video thumbnails where supported.</li>
+            </ul>
+            <p>We do not use YouTube API data for unauthorized access, selling user data or purposes unrelated to Social Scheduler's functionality.</p>
+
+            <h3>YouTube Video Deletion</h3>
+            <p>
+                Social Scheduler does not currently provide a feature to delete
+                videos directly from a user's YouTube channel. Uploaded videos
+                remain under the user's control and may be managed or deleted
+                through YouTube Studio. Disconnecting a YouTube account does
+                not delete videos already uploaded to that channel.
+            </p>
+
+            <h3>Disconnecting YouTube</h3>
+            <p>
+                Users can disconnect YouTube from the connected accounts page.
+                Social Scheduler attempts to revoke the OAuth authorization and
+                removes the stored YouTube authorization credentials and
+                associated connection information. Users may also revoke Social
+                Scheduler's access through their Google Account settings.
+            </p>
+
+            <h3>Deletion and Removal of Data</h3>
+            <p>
+                Users may request deletion of personal information associated
+                with their Social Scheduler account and YouTube connection using
+                the contact information in this policy. Removing a connection
+                does not delete content already uploaded to YouTube.
+            </p>
+
+            <h3>Google Privacy Policy</h3>
+            <p>
+                YouTube API Services are provided by Google and are subject to the
+                <a href="https://policies.google.com/privacy" target="_blank" rel="noopener noreferrer">Google Privacy Policy</a>.
+            </p>
+
+            <h3>YouTube API Services Compliance</h3>
+            <p>
+                Social Scheduler's use of information received from YouTube API
+                Services complies with the applicable YouTube API Services
+                Terms of Service and Google API Services User Data Policy.
+            </p>
+            <p>
+                We may update this section when our YouTube-related
+                functionality or applicable policies change.
+            </p>
+        </section>
+
         <section id="use">
-            <h2>4. How We Use Information</h2>
+            <h2>5. How We Use Information</h2>
 
             <p>
                 Information may be used for legitimate purposes including:
@@ -273,7 +363,7 @@
         </section>
 
         <section id="ai">
-            <h2>5. AI Processing</h2>
+            <h2>6. AI Processing</h2>
 
             <p>
                 Social Scheduler may provide AI-powered features for
@@ -295,7 +385,7 @@
         </section>
 
         <section id="cookies">
-            <h2>6. Cookies and Similar Technologies</h2>
+            <h2>7. Cookies and Similar Technologies</h2>
 
             <p>
                 Social Scheduler may use cookies and similar technologies
@@ -310,7 +400,7 @@
         </section>
 
         <section id="sharing">
-            <h2>7. Data Sharing</h2>
+            <h2>8. Data Sharing</h2>
 
             <p>
                 Information may be shared with service providers when
@@ -336,7 +426,7 @@
         </section>
 
         <section id="retention">
-            <h2>8. Data Retention</h2>
+            <h2>9. Data Retention</h2>
 
             <p>
                 We retain information for as long as reasonably necessary
@@ -352,7 +442,7 @@
         </section>
 
         <section id="security">
-            <h2>9. Data Security</h2>
+            <h2>10. Data Security</h2>
 
             <p>
                 We use reasonable technical and organizational measures
@@ -367,7 +457,7 @@
         </section>
 
         <section id="transfers">
-            <h2>10. International Data Transfers</h2>
+            <h2>11. International Data Transfers</h2>
 
             <p>
                 Social Scheduler and its service providers may process
@@ -382,7 +472,7 @@
         </section>
 
         <section id="rights">
-            <h2>11. Your Privacy Rights</h2>
+            <h2>12. Your Privacy Rights</h2>
 
             <p>
                 Depending on applicable law and your location, you may have
@@ -405,7 +495,7 @@
         </section>
 
         <section id="children">
-            <h2>12. Children's Privacy</h2>
+            <h2>13. Children's Privacy</h2>
 
             <p>
                 Social Scheduler is intended for users who are able to
@@ -419,7 +509,7 @@
         </section>
 
         <section id="third-party">
-            <h2>13. Third-Party Services</h2>
+            <h2>14. Third-Party Services</h2>
 
             <p>
                 Social Scheduler may integrate with third-party platforms
@@ -438,7 +528,7 @@
         </section>
 
         <section id="changes">
-            <h2>14. Changes to This Privacy Policy</h2>
+            <h2>15. Changes to This Privacy Policy</h2>
 
             <p>
                 We may update this Privacy Policy periodically to reflect
@@ -453,7 +543,7 @@
         </section>
 
         <section id="contact">
-            <h2>15. Contact Us</h2>
+            <h2>16. Contact Us</h2>
 
             <p>
                 If you have questions, concerns or requests regarding this

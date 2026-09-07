@@ -253,6 +253,27 @@
                 policies or availability. Such changes may affect features
                 provided through Social Scheduler.
             </p>
+
+            <h3>YouTube Integration</h3>
+            <p>
+                YouTube functionality requires authorization through Google's
+                OAuth process. By connecting a YouTube channel, you authorize
+                Social Scheduler to perform the requested upload and scheduling
+                actions for that channel.
+            </p>
+            <p>
+                You are responsible for the videos and other content you upload
+                or publish, and for complying with YouTube's applicable terms
+                and policies. Social Scheduler does not claim ownership of your
+                YouTube content.
+            </p>
+            <p>
+                Social Scheduler does not currently delete videos from your
+                YouTube channel. You can manage or delete videos through
+                YouTube or YouTube Studio. At your request, Social Scheduler
+                may disconnect a connected YouTube account and attempt to
+                revoke the application's authorization.
+            </p>
         </section>
 
         <section id="content">

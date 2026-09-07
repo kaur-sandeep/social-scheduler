@@ -15,8 +15,20 @@ class LinkedInController extends Controller
     {
         abort_unless(hash_equals((string) session('linkedin_oauth_state'), (string) $request->input('state')), 419);
         if ($request->filled('error')) return redirect()->route('accounts.index')->with('error', $request->input('error_description', 'LinkedIn connection was cancelled.'));
-        $linkedin->connect($request->user()->id, $request->string('code')->toString()); $request->session()->forget('linkedin_oauth_state');
-        return redirect()->route('accounts.index')->with('success', 'LinkedIn profile connected.');
+        $account = $linkedin->connect($request->user()->id, $request->string('code')->toString());
+        $request->session()->forget('linkedin_oauth_state');
+
+        try {
+            $companyPages = $linkedin->syncCompanyPages($account);
+        } catch (\RuntimeException $exception) {
+            report($exception);
+
+            return redirect()->route('accounts.index')
+                ->with('success', 'LinkedIn profile connected. Your personal-profile posting is unchanged.')
+                ->with('error', 'Company Pages were not synced. Enable the Community Management API and the r_organization_admin and w_organization_social permissions in LinkedIn, then reconnect.');
+        }
+
+        return redirect()->route('accounts.index')->with('success', 'LinkedIn profile connected and '.$companyPages.' '.\Illuminate\Support\Str::plural('Company Page', $companyPages).' synced.');
     }
     public function disconnect(SocialAccount $account): RedirectResponse { abort_unless($account->user_id === auth()->id() && $account->provider === 'linkedin', 403); $account->pages()->update(['status' => 'disconnected']); $account->update(['status' => 'disconnected', 'disconnected_at' => now()]); return back()->with('success', 'LinkedIn account disconnected.'); }
 }

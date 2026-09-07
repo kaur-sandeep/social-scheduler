@@ -17,10 +17,6 @@ use App\Http\Controllers\TikTokController;
 use App\Http\Controllers\Admin\ProjectSettingsController;
 use App\Http\Controllers\Admin\PostImportController;
 
-Route::get('/', function () {
-    return auth()->check() ? redirect()->route('dashboard') : view('welcome');
-});
-
 Route::middleware('guest')->group(function () {
     Route::get('/login', [AuthController::class, 'create'])->name('login');
     Route::post('/login', [AuthController::class, 'store'])->name('login.store');

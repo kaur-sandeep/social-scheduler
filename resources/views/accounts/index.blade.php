@@ -26,7 +26,7 @@
             @foreach($providers as $provider => $details)
                 @if($connectedProviders->contains($provider))
                     <button class="btn btn-sm {{ $details['class'] }}" type="button" disabled title="{{ $details['label'] }} is already connected to this project">
-                        <i class="bi {{ $details['icon'] }}"></i> {{ $details['label'] }} connected
+                        <i class="bi {{ $details['icon'] }}"></i> {{ $details['label'] === 'YouTube' ? 'YouTube Connected' : $details['label'].' connected' }}
                     </button>
                 @else
                     <a class="btn btn-sm {{ $details['class'] }}" href="{{ route($provider.'.redirect', ['project_id' => $project?->id]) }}">
@@ -43,12 +43,13 @@
         <div class="panel-header">
             <div>
                 <h2><i class="bi {{ $providers[$account->provider]['icon'] ?? 'bi-share-fill' }} account-provider-icon" aria-hidden="true"></i> {{ $account->name }} <span class="badge status-badge">{{ $account->status }}</span></h2>
-                <p>{{ ucfirst($account->provider) }} account connected {{ optional($account->connected_at)->diffForHumans() }}</p>
+                <p>{{ $account->provider === 'youtube' ? 'YouTube Connected' : ucfirst($account->provider).' account connected' }} {{ optional($account->connected_at)->diffForHumans() }}</p>
             </div>
             <form method="post" action="{{ route($account->provider.'.disconnect', $account) }}">
                 @csrf
-                <button class="btn btn-sm btn-outline-danger" data-confirm-delete data-confirm-title="Disconnect account" data-confirm-message="Are you sure you want to disconnect this account?"><i class="bi bi-link-45deg"></i> Disconnect</button>
+                <button class="btn btn-sm btn-outline-danger" data-confirm-delete data-confirm-title="Disconnect account" data-confirm-message="Are you sure you want to disconnect this account?"> <i class="bi bi-link-45deg"></i> {{ $account->provider === 'youtube' ? 'Disconnect YouTube' : 'Disconnect' }}</button>
             </form>
+            @if($account->provider === 'linkedin')<a class="btn btn-sm btn-outline-primary" href="{{ route('linkedin.redirect', ['project_id' => $project?->id]) }}"><i class="bi bi-arrow-repeat"></i> Reconnect &amp; Sync Pages</a>@endif
         </div>
         <div class="row g-3">
             @foreach($account->pages as $page)

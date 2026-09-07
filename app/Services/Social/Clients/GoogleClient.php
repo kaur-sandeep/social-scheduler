@@ -18,6 +18,17 @@ class GoogleClient extends LoggedHttpClient
         return $this->tokenRequest(['refresh_token' => $refreshToken, 'grant_type' => 'refresh_token']);
     }
 
+    public function revokeToken(string $token): void
+    {
+        $response = Http::asForm()->acceptJson()->post('https://oauth2.googleapis.com/revoke', ['token' => $token]);
+
+        // A token may already have expired or been revoked. Disconnecting must
+        // still remove the local connection in either case.
+        if (! $response->successful() && $response->status() !== 400) {
+            throw new SocialApiException('Google could not revoke the YouTube authorization.', $response->status());
+        }
+    }
+
     public function channel(string $token): array
     {
         $response = Http::acceptJson()->withToken($token)->get(config('google.youtube_api_url').'/channels', ['part' => 'snippet', 'mine' => 'true']);

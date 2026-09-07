@@ -20,10 +20,10 @@ class YouTubeController extends Controller
         $request->session()->forget('youtube_oauth_state');
         return redirect()->route('accounts.index')->with('success', 'YouTube channel connected.');
     }
-    public function disconnect(SocialAccount $account): RedirectResponse
+    public function disconnect(SocialAccount $account, YouTubeService $youtube): RedirectResponse
     {
         abort_unless($account->user_id === auth()->id() && $account->provider === 'youtube', 403);
-        $account->update(['status' => 'disconnected', 'disconnected_at' => now()]);
-        return back()->with('success', 'YouTube channel disconnected.');
+        $youtube->disconnect($account);
+        return back()->with('success', 'YouTube account disconnected successfully.');
     }
 }

@@ -45,11 +45,66 @@ class LinkedInService
             'status' => 'active', 'connected_at' => now(), 'disconnected_at' => null,
         ]);
         $this->accounts->upsertPage(['social_account_id' => $account->id, 'provider' => 'linkedin', 'page_id' => "urn:li:person:{$memberId}"], [
-            'page_name' => $profile['name'] ?? 'LinkedIn profile', 'profile_image' => $profile['picture'] ?? null,
+            'page_name' => $profile['name'] ?? 'LinkedIn profile', 'category' => 'LinkedIn Personal Profile', 'profile_image' => $profile['picture'] ?? null,
             'page_access_token' => $token['access_token'], 'permissions' => config('linkedin.scopes'), 'status' => 'active',
         ]);
 
         return $account->refresh();
+    }
+
+    /**
+     * Sync the LinkedIn Company Pages where the authenticated member can post.
+     * Personal profile sync deliberately remains separate, so a missing Company
+     * Page permission never removes or changes personal-profile publishing.
+     */
+    public function syncCompanyPages(SocialAccount $account): int
+    {
+        $token = $this->accessToken($account);
+        $account->pages()->where('provider', 'linkedin')->where('page_id', 'like', 'urn:li:organization:%')->update(['status' => 'disconnected']);
+
+        $synced = 0;
+        $start = 0;
+
+        do {
+            $response = $this->linkedinGet('/rest/organizationAcls', $token, [
+                'q' => 'roleAssignee', 'state' => 'APPROVED', 'count' => 100, 'start' => $start,
+            ]);
+            $elements = $response['elements'] ?? [];
+            $organizations = collect($elements)
+                ->filter(fn (array $authorization) => in_array($authorization['role'] ?? null, ['ADMINISTRATOR', 'CONTENT_ADMINISTRATOR', 'DIRECT_SPONSORED_CONTENT_POSTER'], true))
+                ->pluck('organization')
+                ->filter(fn ($urn) => is_string($urn) && str_starts_with($urn, 'urn:li:organization:'))
+                ->unique()
+                ->values();
+
+            foreach ($organizations as $organizationUrn) {
+                $organizationId = str($organizationUrn)->afterLast(':')->toString();
+                try {
+                    $organization = $this->linkedinGet('/rest/organizations/'.$organizationId, $token);
+                } catch (RuntimeException) {
+                    // The authorization result is enough to post. Keep the Company
+                    // Page selectable even if LinkedIn does not expose its metadata.
+                    $organization = [];
+                }
+                $this->accounts->upsertPage([
+                    'social_account_id' => $account->id,
+                    'provider' => 'linkedin',
+                    'page_id' => $organizationUrn,
+                ], [
+                    'page_name' => $organization['localizedName'] ?? $organization['name'] ?? "LinkedIn Company Page {$organizationId}",
+                    'category' => 'LinkedIn Company Page',
+                    'profile_image' => data_get($organization, 'logoV2.original~.elements.0.identifiers.0.identifier'),
+                    'page_access_token' => $token,
+                    'permissions' => config('linkedin.scopes'),
+                    'status' => 'active',
+                ]);
+                $synced++;
+            }
+
+            $start += count($elements);
+        } while (count($elements) === 100);
+
+        return $synced;
     }
 
     public function publish(Post $post): array
@@ -86,6 +141,19 @@ class LinkedInService
     }
 
     private function get(string $path, string $token): array { $response = Http::acceptJson()->withToken($token)->timeout(30)->get(config('linkedin.api_url').$path); if ($response->failed()) throw new RuntimeException('Could not read the LinkedIn profile.'); return $response->json() ?? []; }
+    private function linkedinGet(string $path, string $token, array $query = []): array
+    {
+        $response = Http::acceptJson()->withToken($token)->withHeaders([
+            'Linkedin-Version' => config('linkedin.version'),
+            'X-Restli-Protocol-Version' => '2.0.0',
+        ])->timeout(30)->get(config('linkedin.api_url').$path, $query);
+
+        if ($response->failed()) {
+            throw new RuntimeException(data_get($response->json(), 'message', 'LinkedIn Company Pages could not be read.'));
+        }
+
+        return $response->json() ?? [];
+    }
     private function redirectUri(): string { return config('linkedin.redirect_uri') ?: URL::route('linkedin.callback'); }
     private function assertConfigured(): void { if (! config('linkedin.client_id') || ! config('linkedin.client_secret')) throw new RuntimeException('Set LINKEDIN_CLIENT_ID and LINKEDIN_CLIENT_SECRET before connecting LinkedIn.'); }
 }
