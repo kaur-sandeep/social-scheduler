@@ -324,11 +324,9 @@
             </p>
 
             <h3>Google Privacy Policy</h3>
-            <p>
-                YouTube API Services are provided by Google and are subject to the
-                <a href="https://policies.google.com/privacy" target="_blank" rel="noopener noreferrer">Google Privacy Policy</a>.
-            </p>
+           <p> YouTube API Services are provided by Google and are subject to the <a href="https://www.google.com/policies/privacy" target="_blank" rel="noopener noreferrer" style="color: #007bff;"> Google Privacy Policy </a>. </p>
 
+<p> You can review the Google Privacy Policy at: <a href="https://www.google.com/policies/privacy" target="_blank" rel="noopener noreferrer" style="color: #007bff;"> https://www.google.com/policies/privacy </a> </p>
             <h3>YouTube API Services Compliance</h3>
             <p>
                 Social Scheduler's use of information received from YouTube API
@@ -548,8 +546,8 @@
             <p>
                 If you have questions, concerns or requests regarding this
                 Privacy Policy or the handling of your information, please
-                contact the Social Scheduler team using the official contact
-                information provided by the service.
+                contact Cogniter Technologies at
+                <a href="mailto:{{ config('app.legal_contact_email') }}" style="color: #007bff;">{{ config('app.legal_contact_email') }}</a>.
             </p>
         </section>
 

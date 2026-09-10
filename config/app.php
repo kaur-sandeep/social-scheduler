@@ -17,6 +17,18 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Legal contact information
+    |--------------------------------------------------------------------------
+    |
+    | Displayed on the public Terms and Privacy Policy pages. Set this to a
+    | monitored address in the production environment.
+    |
+    */
+
+    'legal_contact_email' => env('LEGAL_CONTACT_EMAIL', 'support@cogniter.com'),
+
+    /*
+    |--------------------------------------------------------------------------
     | Application Environment
     |--------------------------------------------------------------------------
     |

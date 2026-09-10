@@ -60,7 +60,14 @@ class YouTubeService
         $video = $post->media->firstWhere('media_type', 'video');
         if (! $video) throw new RuntimeException('YouTube publishing requires one video.');
         $token = $this->accessToken($page->account);
-        $response = $this->client->uploadVideo($post, $token, $video->path, ['snippet' => ['title' => Str::limit($post->message, 100, ''), 'description' => $post->message, 'categoryId' => '22'], 'status' => ['privacyStatus' => config('google.youtube_privacy'), 'selfDeclaredMadeForKids' => false]]);
+        // Scheduled posts are held and dispatched by Social Scheduler at their
+        // due time, so this is an immediate YouTube upload and must not send
+        // publishAt. The administrator-selected privacy status is applied to
+        // this video only.
+        $privacy = in_array($post->youtube_privacy, ['public', 'unlisted', 'private'], true)
+            ? $post->youtube_privacy
+            : 'private';
+        $response = $this->client->uploadVideo($post, $token, $video->path, ['snippet' => ['title' => Str::limit($post->message, 100, ''), 'description' => $post->message, 'categoryId' => '22'], 'status' => ['privacyStatus' => $privacy, 'selfDeclaredMadeForKids' => false]]);
         if ($video->thumbnail_path) {
             try {
                 $this->client->setThumbnail($post, $token, (string) $response['id'], $video->thumbnail_path);

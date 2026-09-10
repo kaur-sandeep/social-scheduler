@@ -255,6 +255,7 @@
             </p>
 
             <h3>YouTube Integration</h3>
+         <p> If you use Social Scheduler's YouTube features, you also agree to be bound by the <a style="color: #007bff;" href="https://www.youtube.com/t/terms" target="_blank" rel="noopener noreferrer"> YouTube Terms of Service </a>. You can review the YouTube Terms of Service at <a href="https://www.youtube.com/t/terms" target="_blank" rel="noopener noreferrer" style="color: #007bff;"> https://www.youtube.com/t/terms </a>. </p>
             <p>
                 YouTube functionality requires authorization through Google's
                 OAuth process. By connecting a YouTube channel, you authorize
@@ -501,8 +502,9 @@
 
             <p>
                 If you have questions regarding these Terms & Conditions,
-                please contact the Social Scheduler team using the official
-                contact information provided by the service.
+                including questions about YouTube API Services, please contact
+                Cogniter Technologies at
+                <a href="mailto:{{ config('app.legal_contact_email') }}" style="color: #007bff;">{{ config('app.legal_contact_email') }}</a>.
             </p>
         </section>
 

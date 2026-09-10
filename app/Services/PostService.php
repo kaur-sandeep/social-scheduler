@@ -30,6 +30,7 @@ class PostService
                 'user_id' => $user->id,
                 'social_page_id' => $data['social_page_id'] ?? null,
                 'platform' => $data['platform'],
+                'youtube_privacy' => $data['platform'] === 'youtube' ? ($data['youtube_privacy'] ?? 'private') : null,
                 'message' => $data['message'],
                 'status' => $status,
                 'scheduled_date' => $isScheduled ? ($data['scheduled_date'] ?? null) : null,
@@ -83,7 +84,9 @@ class PostService
 
             $post->update([
                 'project_id' => $data['project_id'], 'social_page_id' => $data['social_page_id'] ?? null,
-                'platform' => $data['platform'], 'message' => $data['message'], 'status' => $status,
+                'platform' => $data['platform'],
+                'youtube_privacy' => $data['platform'] === 'youtube' ? ($data['youtube_privacy'] ?? 'private') : null,
+                'message' => $data['message'], 'status' => $status,
                 'scheduled_date' => $isScheduled ? ($data['scheduled_date'] ?? null) : null,
                 'scheduled_time' => $isScheduled ? ($data['scheduled_time'] ?? null) : null,
                 'scheduled_at' => $isScheduled ? $this->scheduledAt($data) : null, 'timezone' => $data['timezone'],

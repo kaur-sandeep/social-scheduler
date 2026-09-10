@@ -40,6 +40,7 @@ class StorePostRequest extends FormRequest
             'publishes.*.scheduled_time' => ['nullable', 'date_format:H:i'],
             'publishes.*.timezone' => ['required', 'timezone'],
             'publishes.*.content_type' => ['nullable', 'required_if:platform,instagram', Rule::in(['image', 'carousel', 'reel'])],
+            'publishes.*.youtube_privacy' => ['nullable', 'required_if:platform,youtube', Rule::in(['public', 'unlisted', 'private'])],
             'publishes.*.media' => ['nullable', 'array', 'max:'.config('social.max_media_files')],
             'publishes.*.media.*' => ['file', 'mimes:jpg,jpeg,png,webp,gif,mp4,mov,avi,webm,m4v,mkv', 'max:'.config('social.max_upload_kilobytes')],
             'publishes.*.thumbnails' => ['nullable', 'array'],
