@@ -9,7 +9,6 @@ use App\Services\Social\Clients\GoogleClient;
 use App\Services\Social\Concerns\InteractsWithPosts;
 use Illuminate\Support\Facades\URL;
 use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Str;
 use RuntimeException;
 
 class YouTubeService
@@ -67,7 +66,7 @@ class YouTubeService
         $privacy = in_array($post->youtube_privacy, ['public', 'unlisted', 'private'], true)
             ? $post->youtube_privacy
             : 'private';
-        $response = $this->client->uploadVideo($post, $token, $video->path, ['snippet' => ['title' => Str::limit($post->message, 100, ''), 'description' => $post->message, 'categoryId' => '22'], 'status' => ['privacyStatus' => $privacy, 'selfDeclaredMadeForKids' => false]]);
+        $response = $this->client->uploadVideo($post, $token, $video->path, ['snippet' => ['title' => $post->youtube_title, 'description' => $post->youtube_description, 'categoryId' => '22'], 'status' => ['privacyStatus' => $privacy, 'selfDeclaredMadeForKids' => false]]);
         if ($video->thumbnail_path) {
             try {
                 $this->client->setThumbnail($post, $token, (string) $response['id'], $video->thumbnail_path);

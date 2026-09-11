@@ -11,7 +11,7 @@ class Post extends Model
     use SoftDeletes;
 
     protected $fillable = [
-        'project_id', 'user_id', 'social_page_id', 'platform', 'youtube_privacy', 'message', 'status', 'scheduled_date',
+        'project_id', 'user_id', 'social_page_id', 'platform', 'youtube_privacy', 'youtube_title', 'youtube_description', 'message', 'status', 'scheduled_date',
         'scheduled_time', 'scheduled_at', 'timezone', 'published_at', 'provider_post_id',
         'error_message', 'retry_count', 'created_by', 'updated_by',
     ];

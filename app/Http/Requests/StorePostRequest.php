@@ -32,10 +32,13 @@ class StorePostRequest extends FormRequest
             }],
             'publishes' => ['required', 'array', 'min:1'],
             'publishes.*.action' => ['required', Rule::in(['draft', 'schedule', 'publish'])],
-            'publishes.*.message' => ['required', 'string', 'max:63206', function (string $attribute, mixed $value, \Closure $fail): void {
+            'publishes.*.message' => ['nullable', 'required_unless:platform,youtube', 'string', 'max:63206', function (string $attribute, mixed $value, \Closure $fail): void {
+                if ($this->input('platform') === 'youtube') return;
                 $limit = PlatformContentPolicy::characterLimit((string) $this->input('platform'));
                 if (mb_strlen($value) > $limit) $fail("The caption exceeds the {$limit}-character limit for the selected platform.");
             }],
+            'publishes.*.youtube_title' => ['nullable', 'required_if:platform,youtube', 'string', 'max:100'],
+            'publishes.*.youtube_description' => ['nullable', 'string', 'max:5000'],
             'publishes.*.scheduled_date' => ['nullable', 'date'],
             'publishes.*.scheduled_time' => ['nullable', 'date_format:H:i'],
             'publishes.*.timezone' => ['required', 'timezone'],
