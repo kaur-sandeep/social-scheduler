@@ -23,10 +23,11 @@ class PlatformContentPolicy
     {
         return <<<'RULES'
 Platform-specific content rules (apply the rule for every post's platform):
-- Instagram: write an engaging, visual caption under 2,200 characters. Add 3–10 relevant, non-duplicated hashtags naturally; do not use more than 30 hashtags.
+- Instagram: write an engaging, visual caption under 2,200 characters. Add 5–10 relevant, non-duplicated hashtags naturally; do not use more than 30 hashtags.
 - Facebook: write a professional, readable business post, aiming for fewer than 1,500 characters. Hashtags are optional; use at most two and never use an Instagram-style hashtag block.
 - LinkedIn: write professional B2B copy focused on business value, logistics, field operations, verification, compliance, or productivity. Use 1–3 relevant hashtags.
 - X (Twitter): write one concise post of at most 280 characters, including any hashtags.
+- For this AI bulk export, the following requirements override any hashtag guidance above: every caption must include 5-10 relevant, non-duplicated hashtags and a natural CTA in the content field.
 RULES;
     }
 
@@ -74,21 +75,10 @@ RULES;
         }
 
         $limit = match ($platform) {
-            'instagram' => 10,
-            'linkedin' => 3,
-            'facebook' => 2,
-            'twitter' => 2,
-            default => 0,
+            default => 10,
         };
         $body = trim((string) preg_replace('/(?<!\w)#[\p{L}\p{N}_]+/u', '', $content));
         $hashtags = array_slice($hashtags, 0, $limit);
-
-        if ($platform === 'instagram' && $hashtags === []) {
-            $hashtags = ['#PhotoProof', '#ProofOfDelivery', '#FieldVerification', '#GPSVerification'];
-        }
-        if ($platform === 'linkedin' && $hashtags === []) {
-            $hashtags = ['#ProofOfDelivery', '#FieldOperations', '#Compliance'];
-        }
 
         return trim($body.($hashtags === [] ? '' : "\n\n".implode(' ', $hashtags)));
     }

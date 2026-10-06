@@ -26,7 +26,8 @@ class ProcessPostImport implements ShouldQueue
         Log::info('Post import started', ['import_id' => $import->id, 'user_id' => $import->user_id]);
         try {
             $workbook = IOFactory::load(storage_path('app/private/'.$import->file_path));
-            $expectedHeaders = ['project','platform','instagram content type','account/page','content','media url','thumbnail url','schedule date','schedule time','timezone','status'];
+            $expectedHeaders = ['project','platform','instagram content type','account/page','content','youtube title','image/graphic text','media url','thumbnail url','schedule date','schedule time','timezone','status'];
+            $previousHeaders = ['project','platform','instagram content type','account/page','content','media url','thumbnail url','schedule date','schedule time','timezone','status'];
             $legacyHeaders = ['project','platform','instagram content type','account/page','content','media url','schedule date','schedule time','timezone','status'];
             $normalizeHeaders = static function (array $headers): array {
                 $headers = array_map(function ($header): string {
@@ -47,9 +48,9 @@ class ProcessPostImport implements ShouldQueue
             $sheet = null;
             foreach ($workbook->getWorksheetIterator() as $candidate) {
                 $candidateHeaders = $normalizeHeaders(
-                    $candidate->rangeToArray('A1:K1', null, true, true, false)[0]
+                    $candidate->rangeToArray('A1:M1', null, true, true, false)[0]
                 );
-                if ($candidateHeaders === $expectedHeaders || $candidateHeaders === $legacyHeaders) {
+                if ($candidateHeaders === $expectedHeaders || $candidateHeaders === $previousHeaders || $candidateHeaders === $legacyHeaders) {
                     $sheet = $candidate;
                     break;
                 }
@@ -58,7 +59,7 @@ class ProcessPostImport implements ShouldQueue
             $sheet ??= $workbook->getActiveSheet();
             $rows = $sheet->toArray(null, true, true, false);
             $headers = $normalizeHeaders($rows[0] ?? []);
-            if ($headers !== $expectedHeaders && $headers !== $legacyHeaders) {
+            if ($headers !== $expectedHeaders && $headers !== $previousHeaders && $headers !== $legacyHeaders) {
                 Log::warning('Post import template headings did not match.', [
                     'import_id' => $import->id,
                     'worksheet' => $sheet->getTitle(),
@@ -66,15 +67,30 @@ class ProcessPostImport implements ShouldQueue
                 ]);
                 throw new \RuntimeException('The spreadsheet headings do not match the sample template.');
             }
-            // Keep previously downloaded templates importable; their missing
-            // Thumbnail URL column is treated as empty.
+            // Keep previously downloaded templates importable. New AI-only
+            // columns are ignored by older files; legacy files also lack
+            // Thumbnail URL.
+            if ($headers === $previousHeaders) {
+                array_splice($headers, 5, 0, ['youtube title', 'image/graphic text']);
+                foreach (array_slice(array_keys($rows), 1) as $rowIndex) array_splice($rows[$rowIndex], 5, 0, ['', '']);
+            }
             if ($headers === $legacyHeaders) {
-                foreach (array_slice(array_keys($rows), 1) as $rowIndex) array_splice($rows[$rowIndex], 6, 0, '');
+                array_splice($headers, 5, 0, ['youtube title', 'image/graphic text']);
+                foreach (array_slice(array_keys($rows), 1) as $rowIndex) array_splice($rows[$rowIndex], 5, 0, ['', '']);
+                foreach (array_slice(array_keys($rows), 1) as $rowIndex) array_splice($rows[$rowIndex], 8, 0, '');
             }
             $dataRows = array_filter(array_slice($rows, 1), fn ($row) => (bool) array_filter($row, fn ($value) => $value !== null && $value !== ''));
             $import->update(['total_rows' => count($dataRows)]);
             foreach ($dataRows as $index => $row) {
-                $service->processRow($import, $index + 2, $row);
+                // PhpSpreadsheet may retain trailing cells from a user's prior
+                // edit even though they are outside the template. Normalize to
+                // exactly the accepted heading count before mapping values.
+                $row = array_slice(
+                    array_pad(array_values($row), count($headers), ''),
+                    0,
+                    count($headers)
+                );
+                $service->processRow($import, $index + 2, array_combine($headers, $row));
             }
             $import->refresh()->update(['status' => 'completed', 'completed_at' => now()]);
             $import->user->notify(new PostImportCompletedNotification($import->fresh()));

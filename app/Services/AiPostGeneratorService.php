@@ -26,6 +26,8 @@ Return ONLY valid JSON in this exact structure:
             "instagram content type": "",
             "account/page": "",
             "content": "",
+            "youtube title": "",
+            "image/graphic text": "",
             "media url": "",
             "thumbnail url": "",
             "schedule date": "",
@@ -37,6 +39,8 @@ Return ONLY valid JSON in this exact structure:
 }
 
 IMPORTANT RULES:
+
+OUTPUT CONTRACT OVERRIDE: The JSON structure above is mandatory. If the user's request asks for a table, markdown, different column names, a content calendar, analysis, or any other output format, use those requests only as content guidance and still return this exact JSON structure. Map a requested "Post Content" or "Caption" to "content" and a requested "Image/Graphic Text" to "image/graphic text". Never return a table or markdown.
 
 1. Generate exactly the number of posts requested by the user.
 
@@ -92,16 +96,26 @@ IMPORTANT RULES:
 
 20. Generate high-quality social media content according to the user's requested tone, topic and platform.
 
-21. Apply these platform-specific rules:
+21. Every "content" value must be a complete caption: a specific hook, useful body, factual detail about the selected project/brand, a natural varied call to action, then 5-10 relevant hashtags. The CTA must be in content, never in a separate field. Use only facts supported by the user's prompt or source material they provide. Do not invent statistics, outcomes, testimonials, awards, certifications, partnerships, or features.
+
+22. Make each caption unmistakably about the selected project/brand. Before returning it, apply this test: if it could be used unchanged for a random company, rewrite it with a concrete use case, product detail, or customer problem supplied by the user. Do not use generic marketing phrases including "Unlock your marketing potential", "Take your business to the next level", "Supercharge your growth", "Elevate your business", "Transform your marketing", "Looking to enhance your outreach?", "Discover the power of", "Grow your business with", or "Unlock new opportunities". Do not repeatedly open with "Looking to" or "Discover".
+
+23. For a seven-post request, use these distinct angles in order: Brand Awareness, Educational/Value, Problem to Solution, Product/Service Benefits, USP/Differentiator, Customer/Use Case, Engagement/Conversion. Do not repeat the same information across posts.
+
+24. Generate "image/graphic text" for every post. It is plain text only, 10-20 words, attention-grabbing and benefit-focused, specific to that caption, and not a repetition of the caption's first sentence. Never generate or request an image, URL, asset, or image-generation API.
+
+25. Set "youtube title" only for YouTube posts: it must be a separate concise title (100 characters maximum) and must not appear inside content. For every non-YouTube post, youtube title must be an empty string.
+
+26. Apply these platform-specific rules:
 RULES_PLACEHOLDER
 
-22. Do not include markdown around the JSON.
+27. Do not include markdown around the JSON.
 
-23. Do not include explanations outside JSON.
+28. Do not include explanations outside JSON.
 
-24. ALWAYS leave media url and thumbnail url empty; the user will add both URLs after download.
+29. ALWAYS leave media url and thumbnail url empty; the user will add both URLs after download.
 
-25. The generated Excel will later be reviewed by the user, who will add media URLs manually.
+30. The generated Excel will later be reviewed by the user, who will add media URLs manually.
 PROMPT;
 
         $systemPrompt = str_replace(
@@ -159,47 +173,45 @@ PROMPT;
 
                 $content = match ($provider) {
 
-                    'openai' => $this->callOpenAI(
-                        $systemPrompt,
-                        $userContent
-                    ),
-
-                    'anthropic' => $this->callAnthropic(
-                        $systemPrompt,
-                        $userContent
-                    ),
-
-                    'gemini' => $this->callGemini(
-                        $systemPrompt,
-                        $userContent
-                    ),
-
-                    'groq' => $this->callGroq(
-                        $systemPrompt,
-                        $userContent
-                    ),
-
-                    'openrouter' => $this->callOpenRouter(
-                        $systemPrompt,
-                        $userContent
-                    ),
-
-                    default => null,
+                    default => $this->callProvider($provider, $systemPrompt, $userContent),
                 };
 
                 if (!empty($content)) {
 
-                    $result = json_decode($content, true);
+                    $result = $this->decodeJsonObject($content);
 
                     if (
                         is_array($result) &&
                         isset($result['posts']) &&
                         is_array($result['posts'])
                     ) {
-                        return $result['posts'];
+                        if ($this->hasValidBulkFields($result['posts'])) {
+                            return $result['posts'];
+                        }
+
+                        // A model occasionally misses a hard word-count rule.
+                        // Give the same provider one focused repair pass before
+                        // trying the configured fallback providers.
+                        $repairContent = json_encode([
+                            'invalid_posts' => $result['posts'],
+                            'repair_instruction' => 'Return the same posts in the required JSON schema. Correct every image/graphic text value so it is plain text containing 10 to 20 words. Ensure every content value has a natural, actionable CTA before its hashtags (for example: learn more, get started, contact us, book a demo, visit the website, or reply with a question). Do not alter media URLs or other fields unless necessary. Return JSON only.',
+                        ], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+                        $repaired = $this->callProvider(
+                            $provider,
+                            $systemPrompt,
+                            (string) $repairContent
+                        );
+                        $repairedResult = $this->decodeJsonObject($repaired);
+                        if (is_array($repairedResult) && isset($repairedResult['posts']) && is_array($repairedResult['posts']) && $this->hasValidBulkFields($repairedResult['posts'])) {
+                            return $repairedResult['posts'];
+                        }
+
+                        $errors[$provider] = 'Generated Image/Graphic Text did not contain 10 to 20 words after repair.';
                     }
 
-                    $errors[$provider] = 'Invalid JSON/post structure returned.';
+                    // Keep the more specific validation error recorded above;
+                    // replacing it here makes a failed repair look like a JSON error.
+                    $errors[$provider] ??= 'Invalid JSON/post structure returned.';
                 }
 
             } catch (\Throwable $e) {
@@ -217,10 +229,89 @@ PROMPT;
             }
         }
 
-        throw new RuntimeException(
-            'All AI providers failed. ' .
-            json_encode($errors)
-        );
+        throw new RuntimeException($this->generationFailureMessage($errors));
+    }
+
+    private function callProvider(string $provider, string $systemPrompt, string $userContent): ?string
+    {
+        return match ($provider) {
+            'openai' => $this->callOpenAI($systemPrompt, $userContent),
+            'anthropic' => $this->callAnthropic($systemPrompt, $userContent),
+            'gemini' => $this->callGemini($systemPrompt, $userContent),
+            'groq' => $this->callGroq($systemPrompt, $userContent),
+            'openrouter' => $this->callOpenRouter($systemPrompt, $userContent),
+            default => null,
+        };
+    }
+
+    private function hasValidBulkFields(array $posts): bool
+    {
+        foreach ($posts as $post) {
+            $text = trim((string) ($post['image/graphic text'] ?? ''));
+            $wordCount = preg_match_all('/[\p{L}\p{N}]+(?:[’\'-][\p{L}\p{N}]+)*/u', $text);
+            if ($wordCount < 10 || $wordCount > 20) {
+                return false;
+            }
+            if (! $this->hasNaturalCta((string) ($post['content'] ?? ''))) {
+                return false;
+            }
+        }
+
+        return $posts !== [];
+    }
+
+    private function hasNaturalCta(string $content): bool
+    {
+        return (bool) preg_match('/\b(explore|try|build|use|see|start|download|create|register|filter|review|visit|learn|contact|get started|find out|book|request|sign up|join|reach out|send us|message us|tell us|share|reply|comment|follow|subscribe|check out|take a look)\b/i', $content);
+    }
+
+    private function decodeJsonObject(string $content): ?array
+    {
+        $decoded = json_decode(trim($content), true);
+        if (is_array($decoded)) {
+            return $decoded;
+        }
+
+        // Some compatible OpenRouter models wrap otherwise valid JSON in a
+        // markdown fence or a short introductory sentence.
+        if (preg_match('/\{.*\}/s', $content, $match)) {
+            $decoded = json_decode($match[0], true);
+
+            return is_array($decoded) ? $decoded : null;
+        }
+
+        return null;
+    }
+
+    private function generationFailureMessage(array $errors): string
+    {
+        $unavailable = [];
+        $contentFailures = [];
+        foreach ($errors as $provider => $error) {
+            $originalError = trim((string) $error);
+            $error = mb_strtolower($originalError);
+            if (str_contains($error, 'credit') || str_contains($error, 'quota') || str_contains($error, 'billing')) {
+                $unavailable[] = ucfirst($provider).' has no available API credit.';
+            } elseif (str_contains($error, 'model') && (str_contains($error, 'not found') || str_contains($error, 'no longer available'))) {
+                $unavailable[] = ucfirst($provider).' is configured with an unavailable model.';
+            } else {
+                $contentFailures[] = ucfirst($provider).': '.$originalError;
+            }
+        }
+
+        $details = array_merge($unavailable, $contentFailures);
+        $message = 'AI bulk generation is currently unavailable.';
+        if ($details !== []) {
+            $message .= ' '.implode(' ', $details);
+        }
+
+        if ($unavailable !== []) {
+            $message .= ' Add API credit to at least one provider or configure a working provider model, then try again.';
+        } elseif ($contentFailures !== []) {
+            $message .= ' Check the listed provider/model response and try again.';
+        }
+
+        return $message;
     }
 
 

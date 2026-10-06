@@ -10,7 +10,7 @@ use App\Services\Social\Concerns\InteractsWithPosts;
 use Illuminate\Support\Facades\URL;
 use Illuminate\Support\Facades\Log;
 use RuntimeException;
-
+use Illuminate\Support\Str;
 class YouTubeService
 {
     use InteractsWithPosts;

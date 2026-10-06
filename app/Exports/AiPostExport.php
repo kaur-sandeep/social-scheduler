@@ -20,7 +20,7 @@ class AiPostExport implements FromArray, WithEvents, WithHeadings
 
     public function headings(): array
     {
-        return ['Project', 'Platform', 'Instagram Content Type', 'Account/Page', 'Content', 'Media URL', 'Thumbnail URL', 'Schedule Date', 'Schedule Time', 'Timezone', 'Status'];
+        return ['Project', 'Platform', 'Instagram Content Type', 'Account/Page', 'Content', 'YouTube Title', 'Image/Graphic Text', 'Media URL', 'Thumbnail URL', 'Schedule Date', 'Schedule Time', 'Timezone', 'Status'];
     }
 
     public function array(): array
@@ -31,6 +31,8 @@ class AiPostExport implements FromArray, WithEvents, WithHeadings
             $post['instagram content type'] ?? '',
             $this->normalizeAccountLabel($post['account/page'] ?? ''),
             $post['content'] ?? '',
+            $post['youtube title'] ?? '',
+            $post['image/graphic text'] ?? '',
             $post['media url'] ?? '',
             $post['thumbnail url'] ?? '',
             $post['schedule date'] ?? '',
@@ -46,11 +48,11 @@ class AiPostExport implements FromArray, WithEvents, WithHeadings
             $sheet = $event->sheet->getDelegate();
             $sheet->setTitle('Posts');
             $sheet->freezePane('A2');
-            $sheet->getStyle('A1:K1')->getFont()->setBold(true);
-            $sheet->getStyle('A1:K1')->getFill()->setFillType('solid')->getStartColor()->setRGB('D9EAF7');
-            foreach (range('A', 'K') as $column) $sheet->getColumnDimension($column)->setWidth($column === 'E' ? 48 : 22);
-            $sheet->getStyle('H2:H10000')->getNumberFormat()->setFormatCode('yyyy-mm-dd');
-            $sheet->getStyle('I2:I10000')->getNumberFormat()->setFormatCode('HH:mm');
+            $sheet->getStyle('A1:M1')->getFont()->setBold(true);
+            $sheet->getStyle('A1:M1')->getFill()->setFillType('solid')->getStartColor()->setRGB('D9EAF7');
+            foreach (range('A', 'M') as $column) $sheet->getColumnDimension($column)->setWidth(in_array($column, ['E', 'G'], true) ? 48 : 22);
+            $sheet->getStyle('J2:J10000')->getNumberFormat()->setFormatCode('yyyy-mm-dd');
+            $sheet->getStyle('K2:K10000')->getNumberFormat()->setFormatCode('HH:mm');
 
             $lists = [$this->projects, ['Facebook', 'Instagram', 'LinkedIn', 'X (Twitter)', 'Pinterest', 'Threads', 'YouTube'], ['Image Post', 'Carousel', 'Reel'], array_map(fn ($account) => $this->normalizeAccountLabel($account), $this->accounts), ['Asia/Kolkata', 'UTC', 'America/New_York', 'Europe/London', 'Australia/Sydney'], ['Draft', 'Pending']];
             $listSheet = $sheet->getParent()->getSheetByName('Lists') ?? $sheet->getParent()->createSheet();
@@ -58,7 +60,7 @@ class AiPostExport implements FromArray, WithEvents, WithHeadings
             $listSheet->setSheetState(Worksheet::SHEETSTATE_HIDDEN);
             foreach ($lists as $column => $values) foreach ($values as $row => $value) $listSheet->setCellValueByColumnAndRow($column + 1, $row + 1, $value);
 
-            foreach (['A' => 0, 'B' => 1, 'C' => 2, 'D' => 3, 'J' => 4, 'K' => 5] as $target => $listIndex) {
+            foreach (['A' => 0, 'B' => 1, 'C' => 2, 'D' => 3, 'L' => 4, 'M' => 5] as $target => $listIndex) {
                 $source = chr(65 + $listIndex);
                 $validation = new DataValidation();
                 $validation->setType(DataValidation::TYPE_LIST)->setErrorStyle(DataValidation::STYLE_STOP)->setAllowBlank($target === 'C')->setShowDropDown(true)->setFormula1("Lists!\${$source}\$1:\${$source}\$".max(1, count($lists[$listIndex])));
@@ -66,9 +68,9 @@ class AiPostExport implements FromArray, WithEvents, WithHeadings
             }
 
             if ($this->posts === []) {
-                $sheet->setCellValue('I2', '09:00');
-                $sheet->setCellValue('J2', 'Asia/Kolkata');
-                $sheet->setCellValue('K2', 'Pending');
+                $sheet->setCellValue('K2', '09:00');
+                $sheet->setCellValue('L2', 'Asia/Kolkata');
+                $sheet->setCellValue('M2', 'Pending');
             }
         }];
     }

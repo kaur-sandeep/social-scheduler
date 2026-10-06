@@ -15,11 +15,11 @@ use Illuminate\Support\Facades\Log;
 
 class PostImportService
 {
-    private const HEADERS = ['project', 'platform', 'instagram content type', 'account/page', 'content', 'media url', 'thumbnail url', 'schedule date', 'schedule time', 'timezone', 'status'];
+    private const HEADERS = ['project', 'platform', 'instagram content type', 'account/page', 'content', 'youtube title', 'image/graphic text', 'media url', 'thumbnail url', 'schedule date', 'schedule time', 'timezone', 'status'];
 
     public function processRow(PostImport $import, int $rowNumber, array $row): void
     {
-        $row = array_combine(self::HEADERS, array_pad(array_map(fn ($value) => trim((string) $value), array_values($row)), count(self::HEADERS), ''));
+        $row = array_replace(array_fill_keys(self::HEADERS, ''), array_map(fn ($value) => trim((string) $value), $row));
         try {
             $data = $this->validateRow($import->user, $row);
             $files = $this->downloadMedia($row['media url']);
@@ -43,11 +43,14 @@ class PostImportService
 
     private function validateRow(User $user, array $row): array
     {
-        foreach (self::HEADERS as $required) if (! in_array($required, ['media url', 'thumbnail url', 'instagram content type'], true) && $row[$required] === '') throw new \InvalidArgumentException(ucwords($required).' is required.');
+        foreach (self::HEADERS as $required) if (! in_array($required, ['media url', 'thumbnail url', 'instagram content type', 'youtube title', 'image/graphic text'], true) && $row[$required] === '') throw new \InvalidArgumentException(ucwords($required).' is required.');
         $project = Project::query()->where('user_id', $user->id)->where('name', $row['project'])->first();
         if (! $project) throw new \InvalidArgumentException('Project does not exist or is not available to you.');
         $platform = strtolower($row['platform']) === 'x (twitter)' || strtolower($row['platform']) === 'x' ? 'twitter' : strtolower($row['platform']);
         if (! in_array($platform, array_column(SocialProvider::cases(), 'value'), true)) throw new \InvalidArgumentException('Platform is not supported.');
+        if ($platform === 'youtube' && $row['youtube title'] === '') throw new \InvalidArgumentException('YouTube Title is required for YouTube posts.');
+        if ($platform !== 'youtube') $row['youtube title'] = '';
+        if (mb_strlen($row['youtube title']) > 100) throw new \InvalidArgumentException('YouTube Title cannot exceed 100 characters.');
         $contentType = match (strtolower($row['instagram content type'])) {
             'image post', 'image' => 'image',
             'carousel' => 'carousel',
@@ -72,7 +75,7 @@ class PostImportService
         if ($scheduled->lessThanOrEqualTo(now($row['timezone']))) throw new \InvalidArgumentException('Schedule time is in the past.');
         foreach ($this->mediaUrls($row['media url']) as $url) if (! filter_var($url, FILTER_VALIDATE_URL) || ! in_array(strtolower((string) parse_url($url, PHP_URL_HOST)), ['dropbox.com', 'www.dropbox.com', 'dl.dropboxusercontent.com'], true)) throw new \InvalidArgumentException('Each Media URL must be a valid Dropbox URL.');
         foreach ($this->mediaUrls($row['thumbnail url']) as $url) if (! filter_var($url, FILTER_VALIDATE_URL) || ! in_array(strtolower((string) parse_url($url, PHP_URL_HOST)), ['dropbox.com', 'www.dropbox.com', 'dl.dropboxusercontent.com'], true)) throw new \InvalidArgumentException('Each Thumbnail URL must be a valid Dropbox URL.');
-        return ['project_id' => $project->id, 'social_page_id' => $page->id, 'platform' => $platform, 'content_type' => $contentType, 'message' => $row['content'], 'scheduled_date' => $scheduled->toDateString(), 'scheduled_time' => $scheduled->format('H:i'), 'scheduled_at' => $scheduled->utc(), 'timezone' => $row['timezone'], 'action' => strtolower($row['status']) === 'draft' ? 'draft' : 'schedule'];
+        return ['project_id' => $project->id, 'social_page_id' => $page->id, 'platform' => $platform, 'content_type' => $contentType, 'message' => $row['content'], 'youtube_title' => $platform === 'youtube' ? $row['youtube title'] : null, 'youtube_description' => $platform === 'youtube' ? $row['content'] : null, 'scheduled_date' => $scheduled->toDateString(), 'scheduled_time' => $scheduled->format('H:i'), 'scheduled_at' => $scheduled->utc(), 'timezone' => $row['timezone'], 'action' => strtolower($row['status']) === 'draft' ? 'draft' : 'schedule'];
     }
 
     private function accountName(?string $label): string

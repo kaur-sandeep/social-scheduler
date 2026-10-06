@@ -376,6 +376,28 @@ class PostImportController extends Controller
                     );
                 }
 
+                // These fields are deliberately separate from the caption. The
+                // graphic text is export-only and is never persisted by import.
+                $post['youtube title'] = trim((string) ($post['youtube title'] ?? ''));
+                $post['image/graphic text'] = trim((string) ($post['image/graphic text'] ?? ''));
+                if ($platform === 'youtube') {
+                    if ($post['youtube title'] === '') {
+                        throw new \RuntimeException("AI generated row {$row}: YouTube Title is required for YouTube.");
+                    }
+                    if (mb_strlen($post['youtube title']) > 100) {
+                        throw new \RuntimeException("AI generated row {$row}: YouTube Title cannot exceed 100 characters.");
+                    }
+                } else {
+                    $post['youtube title'] = '';
+                }
+
+                $graphicWords = preg_match_all('/[\p{L}\p{N}]+(?:[’\'-][\p{L}\p{N}]+)*/u', $post['image/graphic text']);
+                if ($graphicWords < 10 || $graphicWords > 20) {
+                    throw new \RuntimeException("AI generated row {$row}: Image/Graphic Text must contain 10 to 20 words.");
+                }
+
+                $this->validateAiCaptionQuality($post['content'], $row);
+
                 if (! collect($availableAccounts)->contains(fn (array $account) => $account['project'] === mb_strtolower(trim($post['project'])) && $account['platform'] === $platform && $account['account'] === mb_strtolower(trim($post['account/page'])))) {
                     throw new \RuntimeException("AI generated row {$row}: account/page is unavailable for the selected project and platform.");
                 }
@@ -473,6 +495,32 @@ class PostImportController extends Controller
                         "AI generated row {$row}: schedule time is in the past."
                     );
                 }
+            }
+        }
+
+        private function validateAiCaptionQuality(string $content, int $row): void
+        {
+            $banned = [
+                'unlock your marketing potential', 'take your business to the next level',
+                'supercharge your growth', 'elevate your business', 'transform your marketing',
+                'looking to enhance your outreach?', 'discover the power of', 'grow your business with',
+                'unlock new opportunities',
+            ];
+            $normalized = mb_strtolower($content);
+            foreach ($banned as $phrase) {
+                if (str_contains($normalized, $phrase)) {
+                    throw new \RuntimeException("AI generated row {$row}: caption contains prohibited generic marketing language.");
+                }
+            }
+
+            preg_match_all('/(?<!\w)#[\p{L}\p{N}_]+/u', $content, $hashtags);
+            $hashtagCount = count(array_unique(array_map('mb_strtolower', $hashtags[0])));
+            if ($hashtagCount < 5 || $hashtagCount > 10) {
+                throw new \RuntimeException("AI generated row {$row}: caption must include 5 to 10 relevant hashtags.");
+            }
+
+            if (! preg_match('/\b(explore|try|build|use|see|start|download|create|register|filter|review|visit|learn|contact|get started|find out|book|request|sign up|join|reach out|send us|message us|tell us|share|reply|comment|follow|subscribe|check out|take a look)\b/i', $content)) {
+                throw new \RuntimeException("AI generated row {$row}: caption must include a natural CTA.");
             }
         }
 }
