@@ -90,6 +90,18 @@ searchForm?.addEventListener('submit', event => { event.preventDefault(); loadPo
 searchInput?.addEventListener('input', () => { clearTimeout(searchTimer); searchTimer = setTimeout(() => searchForm.requestSubmit(), 350); });
 searchForm?.querySelectorAll('select,input[type="date"]').forEach(input => input.addEventListener('change', () => searchForm.requestSubmit()));
 results?.addEventListener('click', event => {
+    const refresh = event.target.closest('[data-refresh-metrics]');
+    if (refresh) {
+        const row = refresh.closest('tr'); refresh.disabled = true;
+        fetch(refresh.dataset.url, {method: 'POST', headers: {'Accept': 'application/json', 'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.content || ''}})
+            .then(async response => { const data = await response.json(); if (!response.ok) throw new Error(data.message || 'Unable to refresh metrics');
+                const metrics = data.metrics; const views = metrics.post_media_view ?? metrics.post_video_views ?? metrics.video_views ?? metrics.views;
+                row.querySelector('[data-metric="likes"]').textContent = metrics.likes ?? metrics.reactions ?? '—';
+                row.querySelector('[data-metric="comments"]').textContent = metrics.comments ?? '—'; row.querySelector('[data-metric="views"]').textContent = views ?? '—';
+                row.querySelector('[data-metric="updated"]').textContent = data.updated_at;
+            }).catch(error => window.alert(error.message)).finally(() => { refresh.disabled = false; });
+        return;
+    }
     const viewButton = event.target.closest('[data-view-post]');
     if (viewButton) {
         let media = [];

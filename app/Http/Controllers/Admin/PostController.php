@@ -12,12 +12,29 @@ use App\Repositories\SocialAccountRepository;
 use App\Repositories\PostRepository;
 use App\Services\PostService;
 use App\Services\SchedulerService;
+use App\Services\Social\MetaAnalyticsService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\View\View;
 
 class PostController extends Controller
 {
+    public function refreshMetrics(Post $post, MetaAnalyticsService $analytics): JsonResponse
+    {
+        abort_unless($post->user_id === auth()->id(), 404);
+        abort_unless($post->status === \App\Enums\PostStatus::Published && in_array($post->platform, ['facebook', 'instagram'], true), 422, 'Metrics are available for published Facebook and Instagram posts only.');
+        abort_unless($post->provider_post_id, 422, 'The published post ID was not returned by Meta.');
+        $post->load('socialPage.account');
+        abort_unless($post->socialPage && $post->socialPage->account?->user_id === auth()->id() && $post->socialPage->account?->project_id === $post->project_id, 404);
+        try {
+            $metrics = $analytics->postMetrics($post->socialPage, $post->platform, $post->provider_post_id);
+            $post->update(['metrics_snapshot' => $metrics, 'metrics_updated_at' => now()]);
+            return response()->json(['metrics' => $metrics, 'updated_at' => $post->metrics_updated_at->timezone(auth()->user()->timezone ?: config('app.timezone'))->format('M d, Y h:i A')]);
+        } catch (\Throwable $e) {
+            return response()->json(['message' => $e->getMessage()], 422);
+        }
+    }
+
     public function index(PostRepository $posts): View|JsonResponse
     {
         $posts = $posts->paginateForUser(auth()->id(), request()->only(['platform', 'project', 'status', 'date_from', 'date_to', 'q', 'sort', 'direction']));

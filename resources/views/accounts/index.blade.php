@@ -61,6 +61,12 @@
                         <div>
                             <strong>{{ $page->page_name }}</strong>
                             <p>{{ $page->category ?? 'Page' }} - {{ $page->status }}</p>
+                            @if($account->provider === 'facebook' && $account->status === 'active' && $page->status === 'active')
+                                <div class="d-flex flex-wrap gap-2 mt-2">
+                                    <a class="btn btn-sm btn-outline-primary" href="{{ route('accounts.analytics', ['page' => $page, 'platform' => 'facebook', 'project_id' => $project?->id]) }}"><i class="bi bi-bar-chart-line"></i> Facebook Professional Dashboard</a>
+                                    @if($page->instagram_business_id && $page->instagram_username)<a class="btn btn-sm btn-outline-danger" href="{{ route('accounts.analytics', ['page' => $page, 'platform' => 'instagram', 'project_id' => $project?->id]) }}"><i class="bi bi-instagram"></i> Instagram Professional Dashboard</a>@endif
+                                </div>
+                            @endif
                         </div>
                     </div>
                 </div>

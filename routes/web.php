@@ -16,6 +16,7 @@ use App\Http\Controllers\PinterestController;
 use App\Http\Controllers\TikTokController;
 use App\Http\Controllers\Admin\ProjectSettingsController;
 use App\Http\Controllers\Admin\PostImportController;
+use App\Http\Controllers\Admin\AnalyticsController;
 
 Route::middleware('guest')->group(function () {
     Route::get('/login', [AuthController::class, 'create'])->name('login');
@@ -42,6 +43,7 @@ Route::middleware('auth')->group(function () {
     Route::get('/calendar/events', [CalendarController::class, 'events'])->name('calendar.events');
 
     Route::get('/accounts', [AccountController::class, 'index'])->name('accounts.index');
+    Route::get('/accounts/{page}/analytics/{platform}', [AnalyticsController::class, 'show'])->name('accounts.analytics');
     Route::get('/facebook/login', [FacebookController::class, 'redirect'])->name('facebook.redirect');
     Route::get('/facebook/callback', [FacebookController::class, 'callback'])->name('facebook.callback');
     Route::post('/facebook/accounts/{account}/disconnect', [FacebookController::class, 'disconnect'])->name('facebook.disconnect');
@@ -64,6 +66,7 @@ Route::middleware('auth')->group(function () {
     Route::get('/posts/review', [PostController::class, 'review'])->name('posts.review');
     Route::post('/posts/review/publish', [PostController::class, 'confirmPublish'])->name('posts.review.publish');
     Route::resource('posts', PostController::class)->only(['index', 'create', 'store', 'edit', 'update', 'destroy']);
+    Route::post('/posts/{post}/metrics/refresh', [PostController::class, 'refreshMetrics'])->name('posts.metrics.refresh');
     Route::get('/posts/deleted', [PostController::class, 'deleted'])->name('posts.deleted');
     Route::patch('/posts/{post}/restore', [PostController::class, 'restore'])->name('posts.restore');
     Route::delete('/posts/{post}/permanent', [PostController::class, 'forceDestroy'])->name('posts.force-destroy');
@@ -76,7 +79,7 @@ Route::middleware('auth')->group(function () {
     Route::get('/posts/import/{import}/errors', [PostImportController::class, 'errors'])->name('posts.imports.errors');
 
     Route::get('/logs', [LogController::class, 'index'])->name('logs.index');
-    Route::view('/analytics', 'analytics.index')->name('analytics.index');
+    Route::get('/analytics', [AnalyticsController::class, 'index'])->name('analytics.index');
     Route::view('/media-library', 'media.index')->name('media.index');
     Route::get('/settings', [SettingsController::class, 'index'])->name('settings.index');
     Route::get('/project-settings', [ProjectSettingsController::class, 'index'])->name('project-settings.index');
