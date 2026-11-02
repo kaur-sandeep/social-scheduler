@@ -10,6 +10,7 @@ use Illuminate\Http\RedirectResponse;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Response;
 use Illuminate\View\View;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 use Throwable;
 
 class AnalyticsController extends Controller
@@ -47,7 +48,7 @@ class AnalyticsController extends Controller
         return view('analytics.index', compact('reports', 'range', 'since', 'until', 'platform'));
     }
 
-    public function show(Request $request, SocialPage $page, string $platform, MetaAnalyticsService $analytics): View|RedirectResponse
+    public function show(Request $request, SocialPage $page, string $platform, MetaAnalyticsService $analytics): View|RedirectResponse|StreamedResponse
     {
         abort_unless(in_array($platform, ['facebook', 'instagram'], true), 404);
         abort_unless($page->provider === 'facebook' && ($platform === 'facebook' || $page->instagram_business_id), 404);
@@ -107,6 +108,18 @@ class AnalyticsController extends Controller
             })->values()->all();
             return Response::streamDownload(function () use ($data, $page, $platform, $since, $until) {
                 $out = fopen('php://output', 'w');
+                fputcsv($out, ['Report summary']);
+                fputcsv($out, ['Platform', 'Account', 'Period', 'Current followers', 'Facebook page likes', 'Published content']);
+                fputcsv($out, [ucfirst($platform), $page->page_name, "$since to $until", data_get($data, 'account.followers_count', $platform === 'facebook' ? data_get($data, 'account.fan_count') : ''), $platform === 'facebook' ? data_get($data, 'account.fan_count', '') : '', count($data['media'])]);
+                fputcsv($out, []);
+                fputcsv($out, ['Daily account insights']);
+                fputcsv($out, ['Date', 'Metric', 'Value']);
+                foreach ($data['insights'] as $insight) {
+                    foreach ($insight['values'] ?? [] as $point) {
+                        fputcsv($out, [isset($point['end_time']) ? Carbon::parse($point['end_time'])->toDateString() : '', $insight['name'] ?? 'Metric', $point['value'] ?? '']);
+                    }
+                }
+                fputcsv($out, []);
                 fputcsv($out, ['Platform', 'Account', 'Period', 'Post', 'Type', 'Published', 'Metric', 'Value']);
                 foreach ($data['media'] as $item) {
                     $metrics = $item['metrics'] ?: ['unavailable' => 'Not available'];

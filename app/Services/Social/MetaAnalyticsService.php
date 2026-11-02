@@ -3,8 +3,10 @@
 namespace App\Services\Social;
 
 use App\Models\SocialPage;
+use App\Repositories\SocialAccountRepository;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Carbon;
 use RuntimeException;
 
@@ -12,12 +14,62 @@ class MetaAnalyticsService
 {
     private string $base;
 
-    public function __construct() { $this->base = 'https://graph.facebook.com/'.config('facebook.graph_version'); }
+    public function __construct(private readonly SocialAccountRepository $accounts) { $this->base = 'https://graph.facebook.com/'.config('facebook.graph_version'); }
 
     public function dashboard(SocialPage $page, string $platform, string $since, string $until): array
     {
-        $cacheKey = 'meta-analytics:'.hash('sha256', implode('|', [$page->id, $platform, $since, $until, $page->page_access_token]));
-        return Cache::remember($cacheKey, now()->addMinutes(5), fn () => $this->fetchDashboard($page, $platform, $since, $until));
+        $cacheKey = 'meta-analytics-v3:'.hash('sha256', implode('|', [$page->id, $platform, $since, $until, $page->page_access_token]));
+        return Cache::remember($cacheKey, now()->addMinutes(5), function () use ($page, $platform, $since, $until) {
+            try {
+                return $this->fetchDashboard($page, $platform, $since, $until);
+            } catch (RuntimeException $exception) {
+                if (! $this->isPagePermissionError($exception) || ! $this->refreshPageAccessToken($page)) {
+                    throw $exception;
+                }
+
+                // A newly authorized page can leave older saved Page tokens stale.
+                return $this->fetchDashboard($page->fresh(), $platform, $since, $until);
+            }
+        });
+    }
+
+    private function isPagePermissionError(RuntimeException $exception): bool
+    {
+        $message = strtolower($exception->getMessage());
+        return str_contains($message, 'before impersonating a user')
+            || (str_contains($message, 'permission') && str_contains($message, 'page'));
+    }
+
+    /** Reissue a Page token from the connected user's currently authorized Page list. */
+    private function refreshPageAccessToken(SocialPage $page): bool
+    {
+        $account = $page->account;
+        $userToken = $account?->user_access_token;
+        if (! $userToken) return false;
+
+        $response = Http::timeout(30)->get($this->base.'/me/accounts', [
+            'fields' => 'id,access_token,tasks',
+            'limit' => 100,
+            'access_token' => $userToken,
+        ]);
+        if ($response->failed()) {
+            Log::notice('Could not refresh a Meta Page token from the connected user account.', [
+                'social_page_id' => $page->id,
+                'status' => $response->status(),
+                'message' => data_get($response->json(), 'error.message'),
+            ]);
+            return false;
+        }
+
+        $authorizedPage = collect($response->json('data', []))->firstWhere('id', $page->page_id);
+        if (! is_array($authorizedPage) || empty($authorizedPage['access_token'])) return false;
+
+        $this->accounts->upsertPage(
+            ['social_account_id' => $page->social_account_id, 'provider' => 'facebook', 'page_id' => $page->page_id],
+            ['page_access_token' => $authorizedPage['access_token'], 'permissions' => $authorizedPage['tasks'] ?? $page->permissions]
+        );
+
+        return true;
     }
 
     private function fetchDashboard(SocialPage $page, string $platform, string $since, string $until): array
@@ -27,6 +79,12 @@ class MetaAnalyticsService
         if (! $id || $page->status !== 'active') throw new RuntimeException('This professional account is not connected.');
         $token = $page->page_access_token;
         $account = $this->get('/'.$id, ['fields' => $ig ? 'id,username,media_count,followers_count' : 'id,name,fan_count', 'access_token' => $token]);
+        if (! $ig) {
+            $followerAccount = $this->get('/'.$id, ['fields' => 'followers_count', 'access_token' => $token], true);
+            if (! ($followerAccount['_analytics_error'] ?? false) && array_key_exists('followers_count', $followerAccount)) {
+                $account['followers_count'] = $followerAccount['followers_count'];
+            }
+        }
         // Request metrics independently: Meta can reject a whole batch when one metric is
         // unsupported for the account, token, or pinned Graph API version.
         $insightsSince = $since;
@@ -45,7 +103,7 @@ class MetaAnalyticsService
                 ['accounts_engaged', 'day', 'total_value'],
                 ['follower_count', 'lifetime', 'total_value'],
             ]
-            : array_map(fn ($name) => [$name, 'day', null], ['page_follows', 'page_media_view', 'page_post_engagements']);
+            : array_map(fn ($name) => [$name, 'day', null], ['page_daily_follows', 'page_daily_unfollows', 'page_media_view', 'page_total_media_view_unique', 'page_post_engagements']);
         $insightRows = [];
         $unavailableInsights = [];
         foreach ($metricQueries as [$metricName, $period, $metricType]) {
@@ -70,6 +128,19 @@ class MetaAnalyticsService
                 $insightRows[] = $metricRow;
             }
         }
+        // Facebook's Page demographic insights are no longer available. Instagram
+        // may return follower demographics for eligible professional accounts.
+        $demographics = [];
+        if ($ig) {
+            $rawDemographics = $this->get('/'.$id.'/insights', [
+                'metric' => 'follower_demographics', 'period' => 'lifetime',
+                'metric_type' => 'total_value', 'breakdown' => 'age,gender',
+                'access_token' => $token,
+            ], true);
+            if (! ($rawDemographics['_analytics_error'] ?? false)) {
+                $demographics = $rawDemographics['data'] ?? [];
+            }
+        }
         // Graph API rejects an identical since/until pair. Use the next midnight as
         // the exclusive end boundary when the selected report is a single day.
         $mediaUntil = $since === $until ? Carbon::parse($until)->addDay()->toDateString() : $until;
@@ -87,7 +158,7 @@ class MetaAnalyticsService
             }
             $items[] = ['id' => $item['id'], 'text' => $item['caption'] ?? $item['message'] ?? '', 'published_at' => $item['timestamp'] ?? $item['created_time'] ?? null, 'url' => $item['permalink'] ?? $item['permalink_url'] ?? null, 'thumbnail' => $item['thumbnail_url'] ?? $item['media_url'] ?? $item['full_picture'] ?? null, 'type' => $item['media_product_type'] ?? $item['media_type'] ?? null, 'metrics' => $metrics];
         }
-        return ['account' => $account, 'insights' => $insightRows, 'media' => $items, 'insights_since' => $insightsSince, 'insights_until' => $until, 'insights_window_limited' => $insightsWindowLimited, 'insights_unavailable' => $unavailableInsights];
+        return ['account' => $account, 'insights' => $insightRows, 'media' => $items, 'demographics' => $demographics, 'insights_since' => $insightsSince, 'insights_until' => $until, 'insights_window_limited' => $insightsWindowLimited, 'insights_unavailable' => $unavailableInsights];
     }
 
     public function postMetrics(SocialPage $page, string $platform, string $postId): array
@@ -118,7 +189,10 @@ class MetaAnalyticsService
     {
         $response = Http::timeout(25)->get($this->base.$path, $query);
         if ($response->failed()) {
-            if ($optional) return ['_analytics_error' => true];
+            if ($optional) {
+                Log::notice('Optional Meta analytics request was unavailable.', ['path' => $path, 'status' => $response->status(), 'message' => data_get($response->json(), 'error.message')]);
+                return ['_analytics_error' => true];
+            }
             throw new RuntimeException(data_get($response->json(), 'error.message', 'Meta analytics request failed (HTTP '.$response->status().').'));
         }
         return $response->json() ?? [];

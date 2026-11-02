@@ -33,6 +33,8 @@ class FacebookService
             'client_id' => $credential->client_id,
             'redirect_uri' => $credential->redirect_uri ?: URL::route('facebook.callback'),
             'scope' => implode(',', config('facebook.scopes')),
+            // Ask Meta to show previously declined Page permissions during reconnect.
+            'auth_type' => 'rerequest',
             'response_type' => 'code',
             'state' => $state,
         ]);

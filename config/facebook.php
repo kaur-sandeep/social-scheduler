@@ -8,6 +8,7 @@ return [
    'scopes' => [
         'pages_show_list',
         'pages_manage_posts',
+        'pages_manage_metadata',
         'pages_read_engagement',
         'read_insights',
         'pages_read_user_content',
