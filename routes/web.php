@@ -80,6 +80,7 @@ Route::middleware('auth')->group(function () {
 
     Route::get('/logs', [LogController::class, 'index'])->name('logs.index');
     Route::get('/analytics', [AnalyticsController::class, 'index'])->name('analytics.index');
+    Route::post('/admin/analytics/send-test-report', [AnalyticsController::class, 'sendTestReport'])->name('analytics.send-test-report');
     Route::view('/media-library', 'media.index')->name('media.index');
     Route::get('/settings', [SettingsController::class, 'index'])->name('settings.index');
     Route::get('/project-settings', [ProjectSettingsController::class, 'index'])->name('project-settings.index');

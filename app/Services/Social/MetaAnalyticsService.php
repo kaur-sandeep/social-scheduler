@@ -18,17 +18,28 @@ class MetaAnalyticsService
 
     public function dashboard(SocialPage $page, string $platform, string $since, string $until): array
     {
-        $cacheKey = 'meta-analytics-v3:'.hash('sha256', implode('|', [$page->id, $platform, $since, $until, $page->page_access_token]));
-        return Cache::remember($cacheKey, now()->addMinutes(5), function () use ($page, $platform, $since, $until) {
+        return $this->cachedDashboard($page, $platform, $since, $until, true);
+    }
+
+    /** Fetch account-level metrics and post dates for a summary without N per-post insight requests. */
+    public function dashboardForDailyReport(SocialPage $page, string $platform, string $since, string $until): array
+    {
+        return $this->cachedDashboard($page, $platform, $since, $until, false);
+    }
+
+    private function cachedDashboard(SocialPage $page, string $platform, string $since, string $until, bool $includeContentInsights): array
+    {
+        $cacheKey = 'meta-analytics-v4:'.hash('sha256', implode('|', [$page->id, $platform, $since, $until, $includeContentInsights ? 'full' : 'summary', $page->page_access_token]));
+        return Cache::remember($cacheKey, now()->addMinutes(5), function () use ($page, $platform, $since, $until, $includeContentInsights) {
             try {
-                return $this->fetchDashboard($page, $platform, $since, $until);
+                return $this->fetchDashboard($page, $platform, $since, $until, $includeContentInsights);
             } catch (RuntimeException $exception) {
                 if (! $this->isPagePermissionError($exception) || ! $this->refreshPageAccessToken($page)) {
                     throw $exception;
                 }
 
                 // A newly authorized page can leave older saved Page tokens stale.
-                return $this->fetchDashboard($page->fresh(), $platform, $since, $until);
+                return $this->fetchDashboard($page->fresh(), $platform, $since, $until, $includeContentInsights);
             }
         });
     }
@@ -72,7 +83,7 @@ class MetaAnalyticsService
         return true;
     }
 
-    private function fetchDashboard(SocialPage $page, string $platform, string $since, string $until): array
+    private function fetchDashboard(SocialPage $page, string $platform, string $since, string $until, bool $includeContentInsights = true): array
     {
         $ig = $platform === 'instagram';
         $id = $ig ? $page->instagram_business_id : $page->page_id;
@@ -98,12 +109,13 @@ class MetaAnalyticsService
         }
         $metricQueries = $ig
             ? [
-                ['views', 'day', 'total_value'],
+                ['views', 'day', $includeContentInsights ? 'total_value' : 'time_series'],
                 ['reach', 'day', 'time_series'],
-                ['accounts_engaged', 'day', 'total_value'],
-                ['follower_count', 'lifetime', 'total_value'],
+                ...($includeContentInsights ? [['accounts_engaged', 'day', 'total_value'], ['follower_count', 'lifetime', 'total_value']] : []),
             ]
-            : array_map(fn ($name) => [$name, 'day', null], ['page_daily_follows', 'page_daily_unfollows', 'page_media_view', 'page_total_media_view_unique', 'page_post_engagements']);
+            : array_map(fn ($name) => [$name, 'day', null], $includeContentInsights
+                ? ['page_daily_follows', 'page_daily_unfollows', 'page_media_view', 'page_total_media_view_unique', 'page_post_engagements']
+                : ['page_daily_follows', 'page_daily_unfollows', 'page_media_view', 'page_total_media_view_unique']);
         $insightRows = [];
         $unavailableInsights = [];
         foreach ($metricQueries as [$metricName, $period, $metricType]) {
@@ -131,7 +143,7 @@ class MetaAnalyticsService
         // Facebook's Page demographic insights are no longer available. Instagram
         // may return follower demographics for eligible professional accounts.
         $demographics = [];
-        if ($ig) {
+        if ($ig && $includeContentInsights) {
             $rawDemographics = $this->get('/'.$id.'/insights', [
                 'metric' => 'follower_demographics', 'period' => 'lifetime',
                 'metric_type' => 'total_value', 'breakdown' => 'age,gender',
@@ -144,19 +156,21 @@ class MetaAnalyticsService
         // Graph API rejects an identical since/until pair. Use the next midnight as
         // the exclusive end boundary when the selected report is a single day.
         $mediaUntil = $since === $until ? Carbon::parse($until)->addDay()->toDateString() : $until;
-        $media = $this->get('/'.$id.($ig ? '/media' : '/published_posts'), ['fields' => $ig ? 'id,caption,media_type,media_product_type,timestamp,permalink,thumbnail_url,media_url,like_count,comments_count' : 'id,message,created_time,permalink_url,full_picture,shares,comments.limit(0).summary(true),reactions.limit(0).summary(true)', 'since' => $since, 'until' => $mediaUntil, 'limit' => 100, 'access_token' => $token]);
+        $igFields = $includeContentInsights ? 'id,caption,media_type,media_product_type,timestamp,permalink,thumbnail_url,media_url,like_count,comments_count' : 'id,media_type,media_product_type,timestamp';
+        $fbFields = $includeContentInsights ? 'id,message,status_type,created_time,permalink_url,full_picture,shares,comments.limit(0).summary(true),reactions.limit(0).summary(true)' : 'id,status_type,created_time';
+        $media = $this->get('/'.$id.($ig ? '/media' : '/published_posts'), ['fields' => $ig ? $igFields : $fbFields, 'since' => $since, 'until' => $mediaUntil, 'limit' => 100, 'access_token' => $token]);
         $items = [];
         foreach ($media['data'] ?? [] as $item) {
             $metrics = [];
-            if ($ig) {
+            if ($ig && $includeContentInsights) {
                 $names = 'views,reach,saved,shares';
                 try { $raw = $this->get('/'.$item['id'].'/insights', ['metric' => $names, 'metric_type' => 'total_value', 'access_token' => $token], true); foreach ($raw['data'] ?? [] as $m) $metrics[$m['name']] = $this->metricValue($m); } catch (RuntimeException) {}
                 $metrics += ['likes' => $item['like_count'] ?? null, 'comments' => $item['comments_count'] ?? null];
-            } else {
+            } elseif (! $ig && $includeContentInsights) {
                 $metrics = ['reactions' => data_get($item, 'reactions.summary.total_count'), 'comments' => data_get($item, 'comments.summary.total_count'), 'shares' => data_get($item, 'shares.count')];
                 try { $raw = $this->get('/'.$item['id'].'/insights', ['metric' => 'post_media_view', 'access_token' => $token], true); foreach ($raw['data'] ?? [] as $m) $metrics[$m['name']] = $this->metricValue($m); } catch (RuntimeException) {}
             }
-            $items[] = ['id' => $item['id'], 'text' => $item['caption'] ?? $item['message'] ?? '', 'published_at' => $item['timestamp'] ?? $item['created_time'] ?? null, 'url' => $item['permalink'] ?? $item['permalink_url'] ?? null, 'thumbnail' => $item['thumbnail_url'] ?? $item['media_url'] ?? $item['full_picture'] ?? null, 'type' => $item['media_product_type'] ?? $item['media_type'] ?? null, 'metrics' => $metrics];
+            $items[] = ['id' => $item['id'], 'text' => $item['caption'] ?? $item['message'] ?? '', 'published_at' => $item['timestamp'] ?? $item['created_time'] ?? null, 'url' => $item['permalink'] ?? $item['permalink_url'] ?? null, 'thumbnail' => $item['thumbnail_url'] ?? $item['media_url'] ?? $item['full_picture'] ?? null, 'type' => $item['media_product_type'] ?? $item['media_type'] ?? $item['status_type'] ?? null, 'metrics' => $metrics];
         }
         return ['account' => $account, 'insights' => $insightRows, 'media' => $items, 'demographics' => $demographics, 'insights_since' => $insightsSince, 'insights_until' => $until, 'insights_window_limited' => $insightsWindowLimited, 'insights_unavailable' => $unavailableInsights];
     }
@@ -203,8 +217,10 @@ class MetaAnalyticsService
         return array_map(function (array $metric) use ($until): array {
             if (! isset($metric['values']) && isset($metric['total_value']['value'])) {
                 $metric['values'] = [['value' => $metric['total_value']['value'], 'end_time' => $until]];
+                $metric['_analytics_total_only'] = true;
             } elseif (! isset($metric['values']) && array_key_exists('value', $metric)) {
                 $metric['values'] = [['value' => $metric['value'], 'end_time' => $until]];
+                $metric['_analytics_total_only'] = true;
             }
             return $metric;
         }, $metrics);

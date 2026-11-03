@@ -24,6 +24,10 @@
 @endphp
 <style>.overview-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:14px;margin-bottom:18px}.overview-card{background:#fff;border:1px solid #e7ebf0;border-radius:12px;padding:18px}.overview-card small{color:#667085}.overview-card strong{display:block;font-size:1.6rem;margin:6px 0}</style>
 <div class="panel mb-3"><form method="get" class="d-flex flex-wrap align-items-end gap-3"><div><label class="form-label">Platform</label><select class="form-select" name="platform"><option value="all" @selected($platform==='all')>All Platforms</option><option value="facebook" @selected($platform==='facebook')>Facebook</option><option value="instagram" @selected($platform==='instagram')>Instagram</option></select></div><div><label class="form-label">Period</label><select class="form-select" name="range">@foreach(['today'=>'Today','yesterday'=>'Yesterday','last_7_days'=>'Last 7 Days','last_30_days'=>'Last 30 Days','this_month'=>'This Month','last_month'=>'Last Month'] as $key=>$label)<option value="{{ $key }}" @selected($range===$key)>{{ $label }}</option>@endforeach</select></div><button class="btn btn-primary">Apply</button></form></div>
+@if(auth()->user()->is_admin)
+<div class="d-flex justify-content-end mb-3"><form id="send-test-report-form" method="post" action="{{ route('analytics.send-test-report') }}">@csrf<button id="send-test-report-button" class="btn btn-outline-primary" type="submit"><i class="bi bi-envelope-check me-1"></i> <span>Send Test Report</span></button></form></div>
+<div id="send-test-report-notice" class="alert d-none" role="status" aria-live="polite"></div>
+@endif
 <div class="alert alert-info">Combined audience is the sum of connected account follower totals. It does not represent unique people. Reach and views remain separated by platform and account.</div>
 <div class="overview-grid"><div class="overview-card"><small>Facebook followers</small><strong>{{ number_format($facebookFollowers) }}</strong><small>Current followers across connected Facebook Pages</small></div><div class="overview-card"><small>Facebook views · selected period</small><strong>{{ number_format($metricTotal('page_media_view')) }}</strong><small>Metric totals across Facebook accounts</small></div><div class="overview-card"><small>Instagram followers</small><strong>{{ number_format($instagramFollowers) }}</strong><small>Current followers across connected Instagram accounts</small></div><div class="overview-card"><small>Instagram views · selected period</small><strong>{{ number_format($metricTotal('views')) }}</strong><small>Metric totals across Instagram accounts</small></div><div class="overview-card"><small>Content in period</small><strong>{{ number_format($contentTotal) }}</strong><small>Published items returned by Meta</small></div></div>
 <div class="row g-3">
@@ -40,4 +44,43 @@
 @endforelse
 </div>
 <div class="text-muted small mt-3">Generated {{ now()->timezone(auth()->user()->timezone ?: config('app.timezone'))->format('M d, Y h:i A') }}. Metric availability depends on account type, Graph API version, and granted permissions.</div>
+@if(auth()->user()->is_admin)
+@push('scripts')<script>
+(() => {
+    const form = document.getElementById('send-test-report-form');
+    const button = document.getElementById('send-test-report-button');
+    const notice = document.getElementById('send-test-report-notice');
+    if (!form || !button || !notice) return;
+    let sending = false;
+    form.addEventListener('submit', async (event) => {
+        event.preventDefault();
+        if (sending) return;
+        if (!window.confirm('Are you sure you want to generate and send the daily social media analytics report to the configured manager email address?')) return;
+        sending = true;
+        button.disabled = true;
+        button.innerHTML = '<span class="spinner-border spinner-border-sm me-2" aria-hidden="true"></span><span>Sending Report...</span>';
+        notice.className = 'alert d-none';
+        try {
+            const response = await fetch(form.action, {
+                method: 'POST',
+                headers: {'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest'},
+                body: new FormData(form),
+                credentials: 'same-origin'
+            });
+            const result = await response.json().catch(() => ({}));
+            if (!response.ok) throw new Error(result.message || 'The report email could not be sent.');
+            notice.textContent = result.message || 'Daily social media analytics report has been generated and sent successfully.';
+            notice.className = 'alert alert-success';
+        } catch (error) {
+            notice.textContent = error.message || 'The report email could not be sent. Please check the application log.';
+            notice.className = 'alert alert-danger';
+        } finally {
+            sending = false;
+            button.disabled = false;
+            button.innerHTML = '<i class="bi bi-envelope-check me-1"></i> <span>Send Test Report</span>';
+        }
+    });
+})();
+</script>@endpush
+@endif
 @endsection

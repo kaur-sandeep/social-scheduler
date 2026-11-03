@@ -9,12 +9,44 @@ use Illuminate\Http\Request;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Response;
+use Illuminate\Support\Facades\Artisan;
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Log;
 use Illuminate\View\View;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 use Throwable;
 
 class AnalyticsController extends Controller
 {
+    public function sendTestReport(Request $request)
+    {
+        abort_unless($request->user()->is_admin, 403);
+        if (config('social_reports.recipients', []) === []) {
+            return response()->json(['message' => 'No manager email recipients are configured.'], 422);
+        }
+
+        $lock = Cache::lock('manual-daily-social-report:'.now(config('social_reports.timezone', 'Asia/Kolkata'))->toDateString(), 900);
+        if (! $lock->get()) {
+            return response()->json(['message' => 'A report is already being generated. Please wait before trying again.'], 429);
+        }
+
+        try {
+            // Fixed server-side command; request data cannot select a command or recipient.
+            $exitCode = Artisan::call('report:send-daily-social-summary', ['--manual' => true]);
+            if ($exitCode !== 0) {
+                Log::warning('Manual daily social report command returned a failure status.', ['user_id' => $request->user()->id, 'exit_code' => $exitCode]);
+                return response()->json(['message' => 'The report email could not be sent. Check the mail configuration and application log.'], 502);
+            }
+
+            return response()->json(['message' => 'Daily social media analytics report has been generated and sent successfully.']);
+        } catch (Throwable $exception) {
+            Log::error('Manual daily social report request failed.', ['user_id' => $request->user()->id, 'message' => $exception->getMessage(), 'exception' => $exception]);
+            return response()->json(['message' => 'The report email could not be sent. Check the mail configuration and application log.'], 500);
+        } finally {
+            $lock->release();
+        }
+    }
+
     public function index(Request $request, MetaAnalyticsService $analytics): View
     {
         $request->validate(['range' => ['nullable', 'in:today,yesterday,last_7_days,last_30_days,this_month,last_month'], 'platform' => ['nullable', 'in:all,facebook,instagram']]);

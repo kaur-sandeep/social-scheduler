@@ -11,3 +11,8 @@ Artisan::command('inspire', function () {
 
 Schedule::command('posts:dispatch-due')->everyMinute()->withoutOverlapping();
 Schedule::job(new RetryFailedPosts)->everyFiveMinutes()->withoutOverlapping();
+Schedule::command('report:send-daily-social-summary')
+    ->dailyAt('09:00')
+    ->timezone(config('social_reports.timezone'))
+    ->withoutOverlapping()
+    ->onOneServer();
