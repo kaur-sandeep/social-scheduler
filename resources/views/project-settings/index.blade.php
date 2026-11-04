@@ -53,6 +53,15 @@
             <b>Step 7:</b> Copy <b>App ID</b> and <b>App Secret</b>.
             ',
 
+            'instagram' => '
+            <strong>Instagram Business Login Setup Guide</strong><hr>
+            <b>Step 1:</b> In Meta for Developers, add the Instagram product and enable Instagram API with Instagram Login.<br><br>
+            <b>Step 2:</b> Add this callback URL as an allowed OAuth redirect URI:<br>
+            https://social.cogniter.com/instagram/callback<br><br>
+            <b>Step 3:</b> Request <b>instagram_business_basic</b> and <b>instagram_business_manage_insights</b> permissions and complete Meta app review before connecting production accounts.<br><br>
+            <b>Step 4:</b> Enter the Instagram App ID and App Secret below.
+            ',
+
             'linkedin' => '
             <strong>LinkedIn App Setup Guide</strong><hr>
 
@@ -158,6 +167,7 @@
             ];
             $defaultRedirectUrls = [
                 'facebook'  => 'https://socialscheduler.cogniter.com/facebook/callback',
+                'instagram' => 'https://social.cogniter.com/instagram/callback',
                 'linkedin'  => 'https://socialscheduler.cogniter.com/linkedin/callback',
                 'tiktok'    => 'https://socialscheduler.cogniter.com/tiktok/callback',
                 'pinterest' => 'https://socialscheduler.cogniter.com/pinterest/callback',
@@ -165,7 +175,7 @@
                 'youtube'   => 'https://socialscheduler.cogniter.com/youtube/callback',
             ];
             @endphp
-        @foreach(['facebook' => 'Facebook', 'linkedin' => 'LinkedIn', 'tiktok' => 'TikTok', 'pinterest' => 'Pinterest', 'twitter' => 'X (Twitter)', 'youtube' => 'YouTube'] as $key => $name) @php($credential = $credentials->get($key))
+        @foreach(['facebook' => 'Facebook', 'instagram' => 'Instagram', 'linkedin' => 'LinkedIn', 'tiktok' => 'TikTok', 'pinterest' => 'Pinterest', 'twitter' => 'X (Twitter)', 'youtube' => 'YouTube'] as $key => $name) @php($credential = $credentials->get($key))
      
         <div class="border rounded p-3 mb-3">
            <h2 class="h5 d-flex align-items-center">

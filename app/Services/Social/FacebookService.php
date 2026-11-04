@@ -54,6 +54,7 @@ class FacebookService
             'provider' => 'facebook',
             'provider_user_id' => $profile['id'],
         ], [
+            'authentication_method' => 'facebook_login',
             'provider_username' => $profile['name'] ?? null,
             'name' => $profile['name'] ?? null,
             'email' => $profile['email'] ?? null,

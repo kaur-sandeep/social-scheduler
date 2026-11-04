@@ -7,6 +7,7 @@ use App\Models\DailySocialReport;
 use App\Models\SocialPage;
 use App\Services\AnalyticsReportSummaryService;
 use App\Services\Social\MetaAnalyticsService;
+use App\Services\Social\InstagramLoginService;
 use App\Support\ReportMetric;
 use Illuminate\Console\Command;
 use Illuminate\Support\Carbon;
@@ -41,7 +42,7 @@ class SendDailySocialSummary extends Command
         'yesterday_shares', 'seven_day_shares', 'yesterday_saves', 'seven_day_saves',
     ];
 
-    public function handle(MetaAnalyticsService $analytics, AnalyticsReportSummaryService $summaryService): int
+    public function handle(MetaAnalyticsService $analytics, AnalyticsReportSummaryService $summaryService, InstagramLoginService $instagram): int
     {
         $timezone = config('social_reports.timezone', 'Asia/Kolkata');
         try {
@@ -88,7 +89,7 @@ class SendDailySocialSummary extends Command
         }
 
         try {
-            $report = $this->buildReport($analytics, $summaryService, $reportDate, $timezone, $manual);
+            $report = $this->buildReport($analytics, $summaryService, $instagram, $reportDate, $timezone, $manual);
             Log::info('Daily social performance report data generated.', [
                 'report_date' => $reportDate,
                 'period' => $report['period_label'],
@@ -135,7 +136,7 @@ class SendDailySocialSummary extends Command
         });
     }
 
-    private function buildReport(MetaAnalyticsService $analytics, AnalyticsReportSummaryService $summaryService, string $reportDate, string $timezone, bool $manual): array
+    private function buildReport(MetaAnalyticsService $analytics, AnalyticsReportSummaryService $summaryService, InstagramLoginService $instagram, string $reportDate, string $timezone, bool $manual): array
     {
         $date = Carbon::parse($reportDate, $timezone)->startOfDay();
         // The detailed daily columns use the last completed day for scheduled
@@ -153,11 +154,25 @@ class SendDailySocialSummary extends Command
         $rows = [];
 
         $pages = SocialPage::query()->with(['account.project'])
-            ->where('provider', 'facebook')->where('status', 'active')
+            ->whereIn('provider', ['facebook', 'instagram'])->where('status', 'active')
             ->whereHas('account', fn ($query) => $query->where('status', 'active')->whereHas('project'))
             ->orderBy('social_account_id')->orderBy('page_name')->get();
 
         foreach ($pages as $page) {
+            if ($page->provider === 'instagram') {
+                $row = $this->emptyRow($page, 'instagram');
+                try {
+                    $data = $instagram->dashboardForDailyReport($page, $since, $until);
+                    $row = $this->applyAnalytics($row, $data, $analytics, $page, 'instagram', $since, $until, $postsSince, $postsUntil, $dayDate, $timezone);
+                    $row['metric_availability'] = ! empty($data['insights_unavailable']) ? 'Partial data' : 'Available';
+                } catch (Throwable $exception) {
+                    $row['account_error'] = true;
+                    $row['metric_availability'] = 'Unavailable';
+                    Log::warning('Standalone Instagram account metrics could not be fetched for daily report.', ['social_page_id' => $page->id, 'report_date' => $reportDate, 'message' => $exception->getMessage()]);
+                }
+                $rows[] = $row;
+                continue;
+            }
             foreach (['facebook', 'instagram'] as $platform) {
                 if ($platform === 'instagram' && ! $page->instagram_business_id) continue;
                 $row = $this->emptyRow($page, $platform);
@@ -252,15 +267,23 @@ class SendDailySocialSummary extends Command
             $row['yesterday_saves'] = $sumPostMetric($todayItems, 'saved');
             $row['seven_day_saves'] = $sumPostMetric($periodItems, 'saved');
         }
-        $postCounts = $analytics->publishedPostCounts(
-            $page,
-            $platform,
-            $postsSince,
-            $postsUntil,
-            $day,
-            $timezone,
-            data_get($data, 'account.media_count'),
-        );
+        if ($page->provider === 'instagram') {
+            $postCounts = [
+                'total' => data_get($data, 'account.media_count'),
+                'day' => $todayItems->count(),
+                'period' => $periodItems->count(),
+            ];
+        } else {
+            $postCounts = $analytics->publishedPostCounts(
+                $page,
+                $platform,
+                $postsSince,
+                $postsUntil,
+                $day,
+                $timezone,
+                data_get($data, 'account.media_count'),
+            );
+        }
         $row['total_posts'] = ReportMetric::value($postCounts['total'] ?? 0);
         $row['yesterday_posts'] = ReportMetric::value($postCounts['day'] ?? 0);
         $row['seven_day_posts'] = ReportMetric::value($postCounts['period'] ?? 0);

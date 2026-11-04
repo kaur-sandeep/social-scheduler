@@ -9,6 +9,7 @@ use App\Http\Controllers\Admin\SettingsController;
 use App\Http\Controllers\AuthController;
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\FacebookController;
+use App\Http\Controllers\InstagramController;
 use App\Http\Controllers\YouTubeController;
 use App\Http\Controllers\LinkedInController;
 use App\Http\Controllers\TwitterController;
@@ -47,6 +48,9 @@ Route::middleware('auth')->group(function () {
     Route::get('/facebook/login', [FacebookController::class, 'redirect'])->name('facebook.redirect');
     Route::get('/facebook/callback', [FacebookController::class, 'callback'])->name('facebook.callback');
     Route::post('/facebook/accounts/{account}/disconnect', [FacebookController::class, 'disconnect'])->name('facebook.disconnect');
+    Route::get('/instagram/login', [InstagramController::class, 'redirect'])->name('instagram.redirect');
+    Route::get('/instagram/callback', [InstagramController::class, 'callback'])->name('instagram.callback');
+    Route::post('/instagram/accounts/{account}/disconnect', [InstagramController::class, 'disconnect'])->name('instagram.disconnect');
     Route::get('/youtube/login', [YouTubeController::class, 'redirect'])->name('youtube.redirect');
     Route::get('/youtube/callback', [YouTubeController::class, 'callback'])->name('youtube.callback');
     Route::post('/youtube/accounts/{account}/disconnect', [YouTubeController::class, 'disconnect'])->name('youtube.disconnect');

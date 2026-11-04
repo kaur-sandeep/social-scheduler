@@ -7,6 +7,7 @@
 @php
     $providers = [
         'facebook' => ['label' => 'Facebook', 'icon' => 'bi-facebook', 'class' => 'btn-primary'],
+        'instagram' => ['label' => 'Instagram', 'icon' => 'bi-instagram', 'class' => 'btn-danger'],
         'youtube' => ['label' => 'YouTube', 'icon' => 'bi-youtube', 'class' => 'btn-danger'],
         'linkedin' => ['label' => 'LinkedIn', 'icon' => 'bi-linkedin', 'class' => 'btn-primary'],
         'twitter' => ['label' => 'X', 'icon' => 'bi-twitter-x', 'class' => 'btn-dark'],
@@ -24,7 +25,9 @@
         </div>
         <div class="d-flex gap-2">
             @foreach($providers as $provider => $details)
-                @if($connectedProviders->contains($provider))
+                @if($provider === 'instagram' && $project)
+                    <a class="btn btn-sm {{ $details['class'] }}" href="{{ route('instagram.redirect', ['project_id' => $project->id]) }}"><i class="bi {{ $details['icon'] }}"></i> {{ $accounts->where('provider', 'instagram')->isNotEmpty() ? 'Reconnect Instagram' : 'Connect Instagram' }}</a>
+                @elseif($connectedProviders->contains($provider))
                     <button class="btn btn-sm {{ $details['class'] }}" type="button" disabled title="{{ $details['label'] }} is already connected to this project">
                         <i class="bi {{ $details['icon'] }}"></i> {{ $details['label'] === 'YouTube' ? 'YouTube Connected' : $details['label'].' connected' }}
                     </button>
@@ -61,10 +64,12 @@
                         <div>
                             <strong>{{ $page->page_name }}</strong>
                             <p>{{ $page->category ?? 'Page' }} - {{ $page->status }}</p>
+                            @if($page->provider === 'instagram')<p class="small text-muted mb-1">Instagram Login · metrics sync {{ $page->last_synced_at?->diffForHumans() ?? 'pending' }}</p>@endif
                             @if($account->provider === 'facebook' && $account->status === 'active' && $page->status === 'active')
                                 <div class="d-flex flex-wrap gap-2 mt-2">
                                     <a class="btn btn-sm btn-outline-primary" href="{{ route('accounts.analytics', ['page' => $page, 'platform' => 'facebook', 'project_id' => $project?->id]) }}"><i class="bi bi-bar-chart-line"></i> Facebook Professional Dashboard</a>
                                     @if($page->instagram_business_id && $page->instagram_username)<a class="btn btn-sm btn-outline-danger" href="{{ route('accounts.analytics', ['page' => $page, 'platform' => 'instagram', 'project_id' => $project?->id]) }}"><i class="bi bi-instagram"></i> Instagram Professional Dashboard</a>@endif
+                                    @if(!$page->instagram_business_id)<a class="btn btn-sm btn-outline-danger" href="{{ route('instagram.redirect', ['project_id' => $project?->id]) }}"><i class="bi bi-instagram"></i> Connect Instagram</a>@endif
                                 </div>
                             @endif
                         </div>
