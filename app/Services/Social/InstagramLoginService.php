@@ -120,10 +120,9 @@ class InstagramLoginService
             'fields' => 'user_id,username,account_type,media_count,followers_count,profile_picture_url',
             'access_token' => $token,
         ];
-        // Instagram Login tokens are scoped to the authenticated Instagram user.
-        // Resolve that user through /me instead of assuming the stored ID is
-        // interchangeable with the ID returned by other Meta login products.
-        $profile = $this->requestWithTokenRecovery($page, '/me', $profileQuery, $token);
+        // Instagram Login tokens are scoped to this Instagram user. Use the
+        // stored Instagram user ID consistently on profile, insights and media.
+        $profile = $this->requestWithTokenRecovery($page, '/'.$page->page_id, $profileQuery, $token);
         if ($account->status === 'reauthorization_required') {
             $account->update(['status' => 'active']);
         }
@@ -136,8 +135,14 @@ class InstagramLoginService
                 $params['until'] = Carbon::parse($until)->endOfDay()->timestamp;
             }
             try {
-                $result = $this->requestWithTokenRecovery($page, '/me/insights', $params, $token);
-                foreach ($result['data'] ?? [] as $row) $insights[] = $this->normalizeMetric($row, $until, $since === $until);
+                $result = $this->requestWithTokenRecovery($page, '/'.$page->page_id.'/insights', $params, $token);
+                $found = false;
+                foreach ($result['data'] ?? [] as $row) {
+                    $value = data_get($row, 'total_value.value', data_get($row, 'values.0.value', $row['value'] ?? null));
+                    if (($row['name'] ?? null) === $metric && is_numeric($value)) $found = true;
+                    $insights[] = $this->normalizeMetric($row, $until, $since === $until);
+                }
+                if (! $found) $unavailable[] = $metric;
             } catch (RuntimeException $exception) {
                 $unavailable[] = $metric;
                 Log::notice('Instagram Login insight is unavailable for the connected account.', ['social_page_id' => $page->id, 'metric' => $metric, 'message' => $exception->getMessage()]);
@@ -148,7 +153,9 @@ class InstagramLoginService
         $media = [];
         if ($includeMedia) {
             try {
-                $media = $this->pagedWithTokenRecovery($page, '/me/media', [
+                // The media edge belongs to the authenticated IG user ID. Keep
+                // /me for profile/insights, but use the explicit ID for media.
+                $media = $this->pagedWithTokenRecovery($page, '/'.$page->page_id.'/media', [
                     'fields' => 'id,caption,media_type,media_product_type,timestamp,permalink,like_count,comments_count',
                     'limit' => 100,
                     'access_token' => $token,
@@ -164,22 +171,44 @@ class InstagramLoginService
             }
         }
         $mediaRows = [];
+        $mediaInsightsUnavailable = [];
         $timezone = config('social_reports.timezone', config('app.timezone', 'UTC'));
         foreach ($media as $item) {
             if (empty($item['timestamp'])) continue;
             $date = Carbon::parse($item['timestamp'])->setTimezone($timezone)->toDateString();
             if ($date < $since || $date > $until) continue;
             $metrics = ['likes' => $item['like_count'] ?? null, 'comments' => $item['comments_count'] ?? null];
-            try {
-                $postInsights = $this->requestWithTokenRecovery($page, '/'.$item['id'].'/insights', ['metric' => 'views,reach,saved,shares', 'metric_type' => 'total_value', 'access_token' => $token], $token);
-                foreach ($postInsights['data'] ?? [] as $metric) $metrics[$metric['name']] = data_get($metric, 'total_value.value', data_get($metric, 'values.0.value'));
-            } catch (RuntimeException $exception) {
-                Log::notice('Instagram media insights are unavailable.', ['social_page_id' => $page->id, 'media_id' => $item['id'] ?? null, 'message' => $exception->getMessage()]);
+            $mediaType = strtoupper((string) ($item['media_product_type'] ?? $item['media_type'] ?? ''));
+            foreach (['like_count' => 'likes', 'comments_count' => 'comments'] as $field => $name) {
+                if (! array_key_exists($field, $item) || $item[$field] === null) $mediaInsightsUnavailable[] = ['media_id' => $item['id'], 'metric' => $name, 'reason' => 'not_returned'];
+            }
+            // Meta availability varies by media type. Do not ask for shares on
+            // still images; query each eligible metric separately so one
+            // unsupported metric cannot hide the other returned values.
+            $supported = ['views', 'reach', 'saved'];
+            if (in_array($mediaType, ['REEL', 'VIDEO'], true) || strtoupper((string) ($item['media_type'] ?? '')) === 'VIDEO') $supported[] = 'shares';
+            foreach ($supported as $metricName) {
+                try {
+                    $postInsights = $this->requestWithTokenRecovery($page, '/'.$item['id'].'/insights', ['metric' => $metricName, 'metric_type' => 'total_value', 'access_token' => $token], $token);
+                    $found = false;
+                    foreach ($postInsights['data'] ?? [] as $metric) {
+                        if (($metric['name'] ?? null) === $metricName) {
+                            $value = data_get($metric, 'total_value.value', data_get($metric, 'values.0.value'));
+                            $metrics[$metricName] = is_numeric($value) ? $value : null;
+                            $found = is_numeric($value);
+                        }
+                    }
+                    if (! $found) $mediaInsightsUnavailable[] = ['media_id' => $item['id'], 'metric' => $metricName, 'reason' => 'not_returned'];
+                } catch (RuntimeException $exception) {
+                    $mediaInsightsUnavailable[] = ['media_id' => $item['id'], 'metric' => $metricName, 'reason' => 'request_failed'];
+                    Log::notice('Instagram media insight request failed.', ['social_page_id' => $page->id, 'media_id' => $item['id'] ?? null, 'metric' => $metricName, 'message' => $exception->getMessage()]);
+                }
             }
             $mediaRows[] = [
                 'id' => $item['id'],
                 'text' => $item['caption'] ?? '',
-                'type' => $item['media_product_type'] ?? $item['media_type'] ?? 'Other',
+                'type' => $item['media_type'] ?? $item['media_product_type'] ?? 'Other',
+                'product_type' => $item['media_product_type'] ?? null,
                 'url' => $item['permalink'] ?? null,
                 'thumbnail' => $item['thumbnail_url'] ?? $item['media_url'] ?? null,
                 'published_at' => $item['timestamp'],
@@ -188,7 +217,7 @@ class InstagramLoginService
         }
 
         $page->update(['last_synced_at' => now(), 'page_name' => $profile['username'] ?? $page->page_name, 'profile_image' => $profile['profile_picture_url'] ?? $page->profile_image]);
-        return ['account' => ['followers_count' => $profile['followers_count'] ?? null, 'media_count' => $profile['media_count'] ?? null], 'insights' => $insights, 'media' => $mediaRows, 'media_unavailable' => $mediaUnavailable, 'insights_unavailable' => $unavailable];
+        return ['account' => ['followers_count' => $profile['followers_count'] ?? null, 'media_count' => $profile['media_count'] ?? null], 'insights' => $insights, 'media' => $mediaRows, 'media_unavailable' => $mediaUnavailable, 'media_insights_unavailable' => $mediaInsightsUnavailable, 'insights_unavailable' => $unavailable];
     }
 
     public function dashboard(SocialPage $page, string $since, string $until): array
@@ -296,6 +325,7 @@ class InstagramLoginService
     private function paged(string $path, array $query): array
     {
         $items = [];
+        $seen = [];
         $url = $this->base.$path;
         do {
             $response = Http::timeout(25)->get($url, $query);
@@ -312,11 +342,24 @@ class InstagramLoginService
                 throw new RuntimeException(data_get($response->json(), 'error.message', 'Instagram media request failed (HTTP '.$response->status().').'));
             }
             $json = $response->json() ?? [];
+            $loggedResponse = $json;
+            if (isset($loggedResponse['paging']['next'])) $loggedResponse['paging']['next'] = '[redacted pagination URL]';
+            Log::info('Instagram media API page retrieved.', ['api_path' => $path, 'http_status' => $response->status(), 'returned_count' => count($json['data'] ?? []), 'has_next_page' => (bool) data_get($json, 'paging.next'), 'meta_response' => $loggedResponse]);
             $items = array_merge($items, $json['data'] ?? []);
             $url = data_get($json, 'paging.next');
+            if ($url) {
+                if (isset($seen[$url])) throw new RuntimeException('Instagram media pagination repeated a next URL.');
+                $parsed = parse_url($url);
+                if (($parsed['scheme'] ?? '') !== 'https' || strtolower($parsed['host'] ?? '') !== 'graph.instagram.com') {
+                    throw new RuntimeException('Instagram media pagination returned an unexpected host.');
+                }
+                $seen[$url] = true;
+            }
             $query = [];
-        } while ($url && count($items) < 1000);
-        return $items;
+        } while ($url);
+        $deduplicated = [];
+        foreach ($items as $item) if (! empty($item['id'])) $deduplicated[(string) $item['id']] = $item;
+        return array_values($deduplicated);
     }
 
     private function request(string $path, array $query): array
@@ -335,6 +378,8 @@ class InstagramLoginService
             ]);
             throw new RuntimeException(data_get($response->json(), 'error.message', 'Instagram API request failed (HTTP '.$response->status().').'));
         }
-        return $response->json() ?? [];
+        $json = $response->json() ?? [];
+        Log::info('Instagram Graph API request succeeded.', ['api_path' => $path, 'http_status' => $response->status(), 'meta_response' => $json]);
+        return $json;
     }
 }

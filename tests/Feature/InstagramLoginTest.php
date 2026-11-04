@@ -154,4 +154,49 @@ class InstagramLoginTest extends TestCase
         $this->assertSame('active', $account->fresh()->status);
         $this->assertSame(2, $profileCalls);
     }
+
+    public function test_belizeontop_and_groquickly_media_are_paginated_by_their_own_instagram_ids(): void
+    {
+        $user = User::factory()->create();
+        $pages = [];
+        foreach ([['BelizeOnTop', 'ig-belize'], ['GroQuickly', 'ig-gro']] as [$projectName, $instagramId]) {
+            $project = Project::create(['user_id' => $user->id, 'name' => $projectName]);
+            $account = $user->socialAccounts()->create([
+                'project_id' => $project->id, 'provider' => 'instagram', 'authentication_method' => 'instagram_login',
+                'provider_user_id' => $instagramId, 'user_access_token' => 'shared-app-token',
+                'token_expires_at' => now()->addDays(50), 'status' => 'active',
+            ]);
+            $pages[] = SocialPage::create([
+                'social_account_id' => $account->id, 'provider' => 'instagram', 'page_id' => $instagramId,
+                'page_name' => $projectName, 'page_access_token' => 'shared-app-token', 'status' => 'active',
+            ]);
+        }
+
+        $mediaPageCalls = [];
+        Http::fake(function ($request) use (&$mediaPageCalls) {
+            $path = parse_url($request->url(), PHP_URL_PATH);
+            if (preg_match('~/v23\.0/(ig-belize|ig-gro)$~', $path, $match)) {
+                return Http::response(['user_id' => $match[1], 'username' => $match[1], 'followers_count' => 100, 'media_count' => 2], 200);
+            }
+            if (str_ends_with($path, '/insights')) return Http::response(['data' => [['name' => $request['metric'], 'values' => [['value' => 5, 'end_time' => '2026-11-04T00:00:00+0000']]]]], 200);
+            if (str_ends_with($path, '/media')) {
+                $id = str_contains($path, 'ig-belize') ? 'ig-belize' : 'ig-gro';
+                $mediaPageCalls[$id] = ($mediaPageCalls[$id] ?? 0) + 1;
+                if ($mediaPageCalls[$id] > 1) {
+                    return Http::response(['data' => [['id' => $id.'-post-2', 'timestamp' => '2026-11-03T10:00:00+00:00', 'media_type' => 'IMAGE', 'like_count' => 0, 'comments_count' => 0]]], 200);
+                }
+                return Http::response(['data' => [['id' => $id.'-post-1', 'timestamp' => '2026-11-04T10:00:00+00:00', 'media_type' => 'IMAGE', 'like_count' => 1, 'comments_count' => 2]], 'paging' => ['next' => 'https://graph.instagram.com/v23.0/'.$id.'/media?after=next']], 200);
+            }
+            if (str_contains($path, '/insights')) return Http::response(['data' => [['name' => $request['metric'], 'total_value' => ['value' => 1]]]], 200);
+            return Http::response(['data' => []], 200);
+        });
+
+        foreach ($pages as $page) {
+            $data = app(InstagramLoginService::class)->dashboardForDailyReport($page, '2026-11-03', '2026-11-04');
+            $this->assertCount(2, $data['media']);
+            $this->assertSame(100, $data['account']['followers_count']);
+            $this->assertSame($page->page_id.'-post-1', $data['media'][0]['id']);
+            $this->assertSame($page->page_id.'-post-2', $data['media'][1]['id']);
+        }
+    }
 }

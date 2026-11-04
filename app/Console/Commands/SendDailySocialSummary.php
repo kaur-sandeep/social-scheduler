@@ -172,14 +172,16 @@ class SendDailySocialSummary extends Command
                         $dailyMetrics = collect($dailyData['insights'] ?? [])->keyBy('name');
                         $row['yesterday_views'] = $this->dailyMetric($dailyMetrics->get('views'), $dayDate, $timezone);
                         $row['yesterday_unique_views'] = $this->dailyMetric($dailyMetrics->get('reach'), $dayDate, $timezone);
+                        $data['insights_unavailable'] = array_values(array_unique(array_merge($data['insights_unavailable'] ?? [], $dailyData['insights_unavailable'] ?? [])));
                     } catch (Throwable $exception) {
+                        $data['insights_unavailable'] = array_values(array_unique(array_merge($data['insights_unavailable'] ?? [], ['single_day_lookup'])));
                         Log::notice('Instagram single-day insight lookup failed for daily report.', [
                             'social_page_id' => $page->id,
                             'report_day' => $dayDate,
                             'message' => $exception->getMessage(),
                         ]);
                     }
-                    $row['metric_availability'] = (! empty($data['insights_unavailable']) || ! empty($data['media_unavailable'])) ? 'Partial data' : 'Available';
+                    $row['metric_availability'] = (! empty($data['insights_unavailable']) || ! empty($data['media_unavailable']) || ! empty($data['media_insights_unavailable'])) ? 'Partial data' : 'Available';
                 } catch (Throwable $exception) {
                     $row['account_error'] = true;
                     $row['metric_availability'] = 'Unavailable';
@@ -194,7 +196,7 @@ class SendDailySocialSummary extends Command
                 try {
                     $data = $analytics->dashboardForDailyReport($page, $platform, $since, $until);
                     $row = $this->applyAnalytics($row, $data, $analytics, $page, $platform, $since, $until, $postsSince, $postsUntil, $dayDate, $timezone);
-                    $row['metric_availability'] = ! empty($data['insights_unavailable']) ? 'Partial data' : 'Available';
+                    $row['metric_availability'] = ! empty($data['insights_unavailable']) || ($platform === 'instagram' && (! empty($data['media_unavailable']) || ! empty($data['media_insights_unavailable']))) ? 'Partial data' : 'Available';
                 } catch (Throwable $exception) {
                     $row['account_error'] = true;
                     $row['metric_availability'] = 'Unavailable';
@@ -260,10 +262,9 @@ class SendDailySocialSummary extends Command
             $publishedDate = $this->publishedDate($item, $timezone);
             return $publishedDate !== null && $publishedDate >= $postsSince && $publishedDate <= $postsUntil;
         });
-        $sumPostMetric = function ($posts, string $name): int|float|null {
-            return $posts->sum(fn ($item) => is_numeric(data_get($item, 'metrics.'.$name))
-                ? (float) data_get($item, 'metrics.'.$name)
-                : 0);
+        $sumPostMetric = function ($posts, string $name) use ($platform): int|float|null {
+            if ($platform === 'instagram' && $posts->isNotEmpty() && $posts->contains(fn ($item) => ! is_numeric(data_get($item, 'metrics.'.$name)))) return null;
+            return $posts->sum(fn ($item) => is_numeric(data_get($item, 'metrics.'.$name)) ? (float) data_get($item, 'metrics.'.$name) : 0);
         };
         // Views and unique viewers are page/account daily insights, not lifetime
         // views on content that happened to be published on that same date.
@@ -300,9 +301,10 @@ class SendDailySocialSummary extends Command
                 data_get($data, 'account.media_count'),
             );
         }
-        $row['total_posts'] = ReportMetric::value($postCounts['total'] ?? 0);
-        $row['yesterday_posts'] = ReportMetric::value($postCounts['day'] ?? 0);
-        $row['seven_day_posts'] = ReportMetric::value($postCounts['period'] ?? 0);
+        $preserveUnavailable = fn ($value) => $platform === 'instagram' && ! is_numeric($value) ? null : ReportMetric::value($value);
+        $row['total_posts'] = $preserveUnavailable($postCounts['total'] ?? null);
+        $row['yesterday_posts'] = $preserveUnavailable($postCounts['day'] ?? null);
+        $row['seven_day_posts'] = $preserveUnavailable($postCounts['period'] ?? null);
         Log::info('Daily report published-post counts calculated.', [
             'project_id' => $page->account?->project_id,
             'social_account_id' => $page->social_account_id,

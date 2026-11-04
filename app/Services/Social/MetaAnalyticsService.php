@@ -332,17 +332,29 @@ class MetaAnalyticsService
         $fbFields = ($includeContentInsights || $includePostMetrics) ? 'id,message,status_type,created_time,permalink_url,full_picture,shares,comments.limit(0).summary(true),reactions.limit(0).summary(true)' : 'id,status_type,created_time';
         $mediaPath = '/'.$id.($ig ? '/media' : '/published_posts');
         $mediaQuery = ['fields' => $ig ? $igFields : $fbFields, 'since' => $mediaSince, 'until' => $mediaUntil, 'limit' => 100, 'access_token' => $token];
-        if ($includePostMetrics) {
-            $mediaItems = $this->collectPagedMedia($mediaPath, $mediaQuery) ?? [];
+        $mediaUnavailable = false;
+        if ($ig || $includePostMetrics) {
+            $collected = $this->collectPagedMedia($mediaPath, $mediaQuery);
+            $mediaUnavailable = $ig && $collected === null;
+            $mediaItems = $collected ?? [];
         } else {
             $mediaItems = $this->get($mediaPath, $mediaQuery)['data'] ?? [];
         }
         $items = [];
+        $mediaInsightsUnavailable = [];
         foreach ($mediaItems as $item) {
             $metrics = [];
             if ($ig && ($includeContentInsights || $includePostMetrics)) {
-                $names = 'views,reach,saved,shares';
-                try { $raw = $this->get('/'.$item['id'].'/insights', ['metric' => $names, 'metric_type' => 'total_value', 'access_token' => $token], true); foreach ($raw['data'] ?? [] as $m) $metrics[$m['name']] = $this->metricValue($m); } catch (RuntimeException) {}
+                $names = ['views', 'reach', 'saved'];
+                $mediaType = strtoupper((string) ($item['media_product_type'] ?? $item['media_type'] ?? ''));
+                if (in_array($mediaType, ['REEL', 'VIDEO'], true) || strtoupper((string) ($item['media_type'] ?? '')) === 'VIDEO') $names[] = 'shares';
+                foreach ($names as $metricName) {
+                    $raw = $this->get('/'.$item['id'].'/insights', ['metric' => $metricName, 'metric_type' => 'total_value', 'access_token' => $token], true);
+                    if ($raw['_analytics_error'] ?? false) { $mediaInsightsUnavailable[] = ['media_id' => $item['id'], 'metric' => $metricName]; continue; }
+                    $found = false;
+                    foreach ($raw['data'] ?? [] as $m) if (($m['name'] ?? null) === $metricName) { $metrics[$m['name']] = $this->metricValue($m); $found = is_numeric($metrics[$m['name']]); }
+                    if (! $found) $mediaInsightsUnavailable[] = ['media_id' => $item['id'], 'metric' => $metricName];
+                }
                 $metrics += ['likes' => $item['like_count'] ?? null, 'comments' => $item['comments_count'] ?? null];
             } elseif (! $ig && ($includeContentInsights || $includePostMetrics)) {
                 $metrics = ['reactions' => data_get($item, 'reactions.summary.total_count'), 'comments' => data_get($item, 'comments.summary.total_count'), 'shares' => data_get($item, 'shares.count')];
@@ -352,7 +364,7 @@ class MetaAnalyticsService
             }
             $items[] = ['id' => $item['id'], 'text' => $item['caption'] ?? $item['message'] ?? '', 'published_at' => $item['timestamp'] ?? $item['created_time'] ?? null, 'url' => $item['permalink'] ?? $item['permalink_url'] ?? null, 'thumbnail' => $item['thumbnail_url'] ?? $item['media_url'] ?? $item['full_picture'] ?? null, 'type' => $item['media_product_type'] ?? $item['media_type'] ?? $item['status_type'] ?? null, 'metrics' => $metrics];
         }
-        return ['account' => $account, 'insights' => $insightRows, 'media' => $items, 'demographics' => $demographics, 'insights_since' => $insightsSince, 'insights_until' => $until, 'insights_window_limited' => $insightsWindowLimited, 'insights_unavailable' => $unavailableInsights];
+        return ['account' => $account, 'insights' => $insightRows, 'media' => $items, 'demographics' => $demographics, 'insights_since' => $insightsSince, 'insights_until' => $until, 'insights_window_limited' => $insightsWindowLimited, 'insights_unavailable' => $unavailableInsights, 'media_unavailable' => $mediaUnavailable, 'media_insights_unavailable' => $mediaInsightsUnavailable];
     }
 
     public function postMetrics(SocialPage $page, string $platform, string $postId): array

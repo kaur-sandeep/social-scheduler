@@ -96,7 +96,7 @@ class DailySocialSummaryReportTest extends TestCase
             $this->assertSame('0', $csvRow[14]);
             $this->assertStringContainsString('Oct 27, 2026 to Nov 2, 2026', $mail->report['period_label']);
             $this->assertStringContainsString('Last 7 Days Unique Views', $mail->render());
-            $this->assertStringNotContainsString('N/A', $mail->render());
+            $this->assertStringContainsString('N/A', $mail->render());
             $this->assertStringNotContainsString('Net Follower Change', $mail->csvContent());
             $this->assertStringNotContainsString('Previous Period Comparison', $mail->csvContent());
             $this->assertStringNotContainsString('Published Content Types', $mail->csvContent());
@@ -177,11 +177,15 @@ class DailySocialSummaryReportTest extends TestCase
         $analytics = Mockery::mock(MetaAnalyticsService::class);
         $this->app->instance(MetaAnalyticsService::class, $analytics);
         $instagram = Mockery::mock(InstagramLoginService::class);
-        $instagram->shouldReceive('dashboardForDailyReport')->once()->withArgs(fn ($candidate) => $candidate->is($page))->andReturn([
+        $instagram->shouldReceive('dashboardForDailyReport')->twice()->withArgs(fn ($candidate) => $candidate->is($page))->andReturn([
             'account' => ['followers_count' => 625, 'media_count' => 14],
             'insights' => [['name' => 'views', 'values' => [['value' => 89, 'end_time' => '2026-11-04T00:00:00+0000']]]],
             'media' => [['id' => 'media-bollies', 'published_at' => '2026-11-04T11:00:00+0530', 'metrics' => ['likes' => 21, 'comments' => 3, 'saved' => 2, 'shares' => 1]]],
             'insights_unavailable' => [],
+        ], [
+            'account' => ['followers_count' => 625, 'media_count' => 14],
+            'insights' => [['name' => 'views', 'values' => [['value' => 89, 'end_time' => '2026-11-04T00:00:00+0000']]]],
+            'media' => [], 'insights_unavailable' => [],
         ]);
         $this->app->instance(InstagramLoginService::class, $instagram);
 
@@ -195,6 +199,7 @@ class DailySocialSummaryReportTest extends TestCase
             $this->assertSame(89.0, $row['seven_day_views']);
             $this->assertSame(1, $row['yesterday_posts']);
             $this->assertSame(21.0, $row['yesterday_likes']);
+            $this->assertStringContainsString('N/A', $mail->csvContent());
             $this->assertStringContainsString('@bollies', $mail->render());
             return true;
         });
