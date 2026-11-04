@@ -47,7 +47,7 @@
         ['Comments', $interactionTotals['Comments'], 'bi-chat'],
         ['Shares', $interactionTotals['Shares'], 'bi-share'],
         ['Saves', $platform === 'instagram' && $media->contains(fn ($item) => array_key_exists('saved', $item['metrics'] ?? [])) ? $interactionTotals['Saves'] : null, 'bi-bookmark'],
-        ['Published content', $media->count(), 'bi-send'],
+        ['Published content', $data['published_post_count'] ?? $media->count(), 'bi-send'],
     ];
     if ($platform === 'facebook') $kpis[] = ['Page likes', data_get($data, 'account.fan_count'), 'bi-hand-thumbs-up'];
     $previousMetricCollection = collect($previous['insights'] ?? [])->keyBy('name');
@@ -68,7 +68,7 @@
         'Comments' => $knownSum($previousMedia, 'comments'),
         'Shares' => $knownSum($previousMedia, 'shares'),
         'Saves' => $knownSum($previousMedia, 'saved'),
-        'Published content' => $previousMedia->count(),
+        'Published content' => $previousPublishedPostCount ?? $previousMedia->count(),
     ];
     $demographicRows = collect();
     $walkDemographics = function ($node) use (&$walkDemographics, $demographicRows) {

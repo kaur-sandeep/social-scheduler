@@ -43,7 +43,16 @@ class AnalyticsController extends Controller
             Log::error('Manual daily social report request failed.', ['user_id' => $request->user()->id, 'message' => $exception->getMessage(), 'exception' => $exception]);
             return response()->json(['message' => 'The report email could not be sent. Check the mail configuration and application log.'], 500);
         } finally {
-            $lock->release();
+            // The email may already have been sent by this point. A cache backend
+            // failure while releasing the anti-double-click lock must not turn that
+            // successful request into an HTTP 500 (and encourage the user to resend).
+            try {
+                $lock->release();
+            } catch (Throwable $exception) {
+                Log::warning('Could not release the manual daily report lock; it will expire automatically.', [
+                    'message' => $exception->getMessage(),
+                ]);
+            }
         }
     }
 
@@ -59,7 +68,7 @@ class AnalyticsController extends Controller
             'last_30_days' => [$now->copy()->subDays(29)->toDateString(), $now->toDateString()],
             'this_month' => [$now->copy()->startOfMonth()->toDateString(), $now->toDateString()],
             'last_month' => [$now->copy()->subMonthNoOverflow()->startOfMonth()->toDateString(), $now->copy()->subMonthNoOverflow()->endOfMonth()->toDateString()],
-            default => [$now->copy()->subDays(6)->toDateString(), $now->toDateString()],
+            default => [$now->copy()->subDays(7)->toDateString(), $now->copy()->subDay()->toDateString()],
         };
         $platform = $request->string('platform', 'all')->toString();
         $pages = SocialPage::query()->with('account')->where('provider', 'facebook')->where('status', 'active')
@@ -71,7 +80,9 @@ class AnalyticsController extends Controller
                 if ($channel === 'instagram' && ! $page->instagram_business_id) continue;
                 if ($platform !== 'all' && $platform !== $channel) continue;
                 try {
-                    $reports[] = ['page' => $page, 'platform' => $channel, 'data' => $analytics->dashboard($page, $channel, $since, $until), 'error' => null];
+                    $data = $analytics->dashboard($page, $channel, $since, $until);
+                    $postCounts = $analytics->publishedPostCounts($page, $channel, $since, $until, $until, $timezone, data_get($data, 'account.media_count'));
+                    $reports[] = ['page' => $page, 'platform' => $channel, 'data' => $data, 'published_count' => $postCounts['period'], 'error' => null];
                 } catch (Throwable $e) {
                     $reports[] = ['page' => $page, 'platform' => $channel, 'data' => null, 'error' => $e->getMessage()];
                 }
@@ -100,7 +111,7 @@ class AnalyticsController extends Controller
             'this_month' => [$now->copy()->startOfMonth()->toDateString(), $now->toDateString()],
             'last_month' => [$now->copy()->subMonthNoOverflow()->startOfMonth()->toDateString(), $now->copy()->subMonthNoOverflow()->endOfMonth()->toDateString()],
             'custom' => [$request->input('since', $now->toDateString()), $request->input('until', $now->toDateString())],
-            default => [$now->copy()->subDays(6)->toDateString(), $now->toDateString()],
+            default => [$now->copy()->subDays(7)->toDateString(), $now->copy()->subDay()->toDateString()],
         };
         abort_if(Carbon::parse($since)->diffInDays(Carbon::parse($until)) > 366, 422, 'Choose a date range of 367 days or less.');
         $projectId = $page->account->project_id;
@@ -118,15 +129,26 @@ class AnalyticsController extends Controller
         $days = Carbon::parse($since)->diffInDays(Carbon::parse($until)) + 1;
         $previousUntil = Carbon::parse($since)->subDay();
         $previousSince = $previousUntil->copy()->subDays($days - 1);
-        $data = null; $previous = null; $error = null;
+        $data = null; $previous = null; $previousPublishedPostCount = null; $error = null;
         try {
             $data = $analytics->dashboard($page, $platform, $since, $until);
+            $postCounts = $analytics->publishedPostCounts($page, $platform, $since, $until, $until, $timezone, data_get($data, 'account.media_count'));
+            $data['published_post_count'] = $postCounts['period'];
         } catch (Throwable $e) {
             $error = $e->getMessage();
         }
         if ($data) {
             try {
                 $previous = $analytics->dashboard($page, $platform, $previousSince->toDateString(), $previousUntil->toDateString());
+                $previousPublishedPostCount = $analytics->publishedPostCounts(
+                    $page,
+                    $platform,
+                    $previousSince->toDateString(),
+                    $previousUntil->toDateString(),
+                    $previousUntil->toDateString(),
+                    $timezone,
+                    data_get($previous, 'account.media_count'),
+                )['period'];
             } catch (Throwable) {
                 // Previous-period data is supplementary; the selected report remains usable.
             }
@@ -142,7 +164,7 @@ class AnalyticsController extends Controller
                 $out = fopen('php://output', 'w');
                 fputcsv($out, ['Report summary']);
                 fputcsv($out, ['Platform', 'Account', 'Period', 'Current followers', 'Facebook page likes', 'Published content']);
-                fputcsv($out, [ucfirst($platform), $page->page_name, "$since to $until", data_get($data, 'account.followers_count', $platform === 'facebook' ? data_get($data, 'account.fan_count') : ''), $platform === 'facebook' ? data_get($data, 'account.fan_count', '') : '', count($data['media'])]);
+                fputcsv($out, [ucfirst($platform), $page->page_name, "$since to $until", data_get($data, 'account.followers_count', $platform === 'facebook' ? data_get($data, 'account.fan_count') : ''), $platform === 'facebook' ? data_get($data, 'account.fan_count', '') : '', $data['published_post_count'] ?? 0]);
                 fputcsv($out, []);
                 fputcsv($out, ['Daily account insights']);
                 fputcsv($out, ['Date', 'Metric', 'Value']);
@@ -164,6 +186,6 @@ class AnalyticsController extends Controller
                 fclose($out);
             }, $filename, ['Content-Type' => 'text/csv; charset=UTF-8']);
         }
-        return view('analytics.professional', compact('page', 'platform', 'range', 'since', 'until', 'data', 'previous', 'previousSince', 'previousUntil', 'error', 'accounts'));
+        return view('analytics.professional', compact('page', 'platform', 'range', 'since', 'until', 'data', 'previous', 'previousPublishedPostCount', 'previousSince', 'previousUntil', 'error', 'accounts'));
     }
 }

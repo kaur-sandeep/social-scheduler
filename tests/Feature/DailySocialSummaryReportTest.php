@@ -9,6 +9,7 @@ use App\Models\SocialAccount;
 use App\Models\SocialPage;
 use App\Models\User;
 use App\Services\Social\MetaAnalyticsService;
+use Illuminate\Contracts\Cache\Lock as CacheLock;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Cache;
@@ -64,6 +65,7 @@ class DailySocialSummaryReportTest extends TestCase
         $analytics = Mockery::mock(MetaAnalyticsService::class);
         $analytics->shouldReceive('dashboardForDailyReport')->once()->withArgs(fn ($candidate, $platform, $since, $until) => $candidate->is($page) && $platform === 'facebook' && $since === '2026-10-26' && $until === '2026-11-01')->andReturn($facebook);
         $analytics->shouldReceive('dashboardForDailyReport')->once()->withArgs(fn ($candidate, $platform, $since, $until) => $candidate->is($page) && $platform === 'instagram' && $since === '2026-10-26' && $until === '2026-11-01')->andReturn($instagram);
+        $analytics->shouldReceive('publishedPostCounts')->twice()->andReturn(['total' => 1, 'day' => 1, 'period' => 1]);
         $this->app->instance(MetaAnalyticsService::class, $analytics);
 
         Artisan::call('report:send-daily-social-summary', ['--date' => '2026-11-02']);
@@ -105,6 +107,7 @@ class DailySocialSummaryReportTest extends TestCase
         $analytics = Mockery::mock(MetaAnalyticsService::class);
         $analytics->shouldReceive('dashboardForDailyReport')->once()->withArgs(fn ($candidate, $platform) => $candidate->is($page) && $platform === 'facebook')
             ->andReturn(['account' => ['followers_count' => 42], 'insights' => [], 'media' => []]);
+        $analytics->shouldReceive('publishedPostCounts')->once()->andReturn(['total' => 0, 'day' => 0, 'period' => 0]);
         $this->app->instance(MetaAnalyticsService::class, $analytics);
 
         Artisan::call('report:send-daily-social-summary', ['--preview' => true, '--date' => '2026-11-02']);
@@ -119,12 +122,17 @@ class DailySocialSummaryReportTest extends TestCase
     {
         Mail::fake();
         config(['social_reports.enabled' => false, 'social_reports.recipients' => ['first@example.com', 'second@example.com']]);
+        $lock = Mockery::mock(CacheLock::class);
+        $lock->shouldReceive('get')->once()->andReturnTrue();
+        $lock->shouldReceive('release')->once()->andThrow(new \RuntimeException('Cache backend unavailable'));
+        Cache::shouldReceive('lock')->once()->andReturn($lock);
         $user = User::factory()->create(['is_admin' => true]);
         $project = Project::create(['user_id' => $user->id, 'name' => 'Manual Project']);
         $account = SocialAccount::create(['user_id' => $user->id, 'project_id' => $project->id, 'provider' => 'facebook', 'provider_user_id' => 'manual-user', 'user_access_token' => 'token']);
         $page = SocialPage::create(['social_account_id' => $account->id, 'provider' => 'facebook', 'page_id' => 'manual-page', 'page_name' => 'Manual Page', 'page_access_token' => 'page-token', 'status' => 'active']);
         $analytics = Mockery::mock(MetaAnalyticsService::class);
         $analytics->shouldReceive('dashboardForDailyReport')->once()->andReturn(['account' => [], 'insights' => [], 'media' => []]);
+        $analytics->shouldReceive('publishedPostCounts')->once()->andReturn(['total' => 0, 'day' => 0, 'period' => 0]);
         $this->app->instance(MetaAnalyticsService::class, $analytics);
 
         $response = $this->actingAs($user)->postJson(route('analytics.send-test-report'));
@@ -153,6 +161,7 @@ class DailySocialSummaryReportTest extends TestCase
         SocialPage::create(['social_account_id' => $account->id, 'provider' => 'facebook', 'page_id' => 'failed-page', 'page_name' => 'Failed Page', 'page_access_token' => 'page-token', 'status' => 'active']);
         $analytics = Mockery::mock(MetaAnalyticsService::class);
         $analytics->shouldReceive('dashboardForDailyReport')->once()->andReturn(['account' => [], 'insights' => [], 'media' => []]);
+        $analytics->shouldReceive('publishedPostCounts')->once()->andReturn(['total' => 0, 'day' => 0, 'period' => 0]);
         $this->app->instance(MetaAnalyticsService::class, $analytics);
 
         $pendingMail = Mockery::mock();
