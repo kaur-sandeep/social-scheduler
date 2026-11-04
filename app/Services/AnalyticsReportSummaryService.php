@@ -15,7 +15,9 @@ class AnalyticsReportSummaryService
         $table = array_map(function (array $row) use ($columns, $columnKeys): array {
             $values = [];
             foreach ($columnKeys as $index => $key) {
-                $values[$columns[$index] ?? $key] = $row[$key] ?? 0;
+                $values[$columns[$index] ?? $key] = array_key_exists($key, $row) && $row[$key] === null
+                    ? 'unavailable'
+                    : ($row[$key] ?? 0);
             }
             return $values;
         }, $rows);

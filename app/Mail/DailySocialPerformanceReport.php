@@ -24,4 +24,32 @@ class DailySocialPerformanceReport extends Mailable
         return new Content(view: 'mail.daily-social-performance-report');
     }
 
+    public function csvContent(): string
+    {
+        $stream = fopen('php://temp', 'r+');
+        fputcsv($stream, $this->report['columns']);
+
+        foreach ($this->report['rows'] as $row) {
+            $values = [];
+            foreach ($this->report['column_keys'] as $key) {
+                $value = $row[$key] ?? null;
+                if (is_array($value)) {
+                    $value = $value === [] ? '0' : collect($value)->map(fn ($count, $type) => $type.': '.$count)->join(', ');
+                } elseif (\App\Support\ReportMetric::isNumericField($key)) {
+                    $value = \App\Support\ReportMetric::display($value);
+                } else {
+                    $value ??= '';
+                }
+                $values[] = $value;
+            }
+            fputcsv($stream, $values);
+        }
+
+        rewind($stream);
+        $csv = stream_get_contents($stream);
+        fclose($stream);
+
+        return $csv;
+    }
+
 }

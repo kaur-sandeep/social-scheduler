@@ -48,11 +48,15 @@ class DailySocialSummaryReportTest extends TestCase
                 ]],
                 ['name' => 'page_media_view', 'values' => [
                     ['value' => 200, 'end_time' => '2026-11-01T12:00:00+0000'],
+                    ['value' => 50, 'end_time' => '2026-11-02T12:00:00+0000'],
                     ['value' => 120, 'end_time' => '2026-10-31T12:00:00+0000'],
                 ]],
                 ['name' => 'page_total_media_view_unique', 'values' => [['value' => 150, 'end_time' => '2026-11-01T12:00:00+0000']]],
             ],
-            'media' => [['type' => 'VIDEO', 'published_at' => '2026-11-01T10:00:00+0000']],
+            'media' => [
+                ['type' => 'VIDEO', 'published_at' => '2026-11-01T10:00:00+0000', 'metrics' => ['reactions' => 0, 'comments' => 0, 'shares' => 1]],
+                ['type' => 'VIDEO', 'published_at' => '2026-11-02T10:00:00+0000', 'metrics' => ['reactions' => 0, 'comments' => 0]],
+            ],
         ];
         $instagram = [
             'account' => ['followers_count' => 45, 'media_count' => 12],
@@ -60,11 +64,11 @@ class DailySocialSummaryReportTest extends TestCase
                 ['name' => 'views', 'values' => [['value' => 300, 'end_time' => '2026-11-01T12:00:00+0000']]],
                 ['name' => 'reach', 'values' => [['value' => 250, 'end_time' => '2026-11-01T12:00:00+0000']]],
             ],
-            'media' => [['type' => 'REELS', 'published_at' => '2026-11-01T09:00:00+0000']],
+            'media' => [['type' => 'REELS', 'published_at' => '2026-11-01T09:00:00+0000', 'metrics' => ['likes' => 0, 'comments' => 0, 'shares' => 0, 'saved' => 0]]],
         ];
         $analytics = Mockery::mock(MetaAnalyticsService::class);
-        $analytics->shouldReceive('dashboardForDailyReport')->once()->withArgs(fn ($candidate, $platform, $since, $until) => $candidate->is($page) && $platform === 'facebook' && $since === '2026-10-26' && $until === '2026-11-01')->andReturn($facebook);
-        $analytics->shouldReceive('dashboardForDailyReport')->once()->withArgs(fn ($candidate, $platform, $since, $until) => $candidate->is($page) && $platform === 'instagram' && $since === '2026-10-26' && $until === '2026-11-01')->andReturn($instagram);
+        $analytics->shouldReceive('dashboardForDailyReport')->once()->withArgs(fn ($candidate, $platform, $since, $until) => $candidate->is($page) && $platform === 'facebook' && $since === '2026-10-27' && $until === '2026-11-02')->andReturn($facebook);
+        $analytics->shouldReceive('dashboardForDailyReport')->once()->withArgs(fn ($candidate, $platform, $since, $until) => $candidate->is($page) && $platform === 'instagram' && $since === '2026-10-27' && $until === '2026-11-02')->andReturn($instagram);
         $analytics->shouldReceive('publishedPostCounts')->twice()->andReturn(['total' => 1, 'day' => 1, 'period' => 1]);
         $this->app->instance(MetaAnalyticsService::class, $analytics);
 
@@ -76,16 +80,21 @@ class DailySocialSummaryReportTest extends TestCase
             $facebookRow = collect($mail->report['rows'])->firstWhere('account_type', 'Facebook');
             $this->assertSame(6.0, $facebookRow['yesterday_net_change'], json_encode($facebookRow));
             $this->assertSame(200, $facebookRow['yesterday_views']);
+            $this->assertSame(370.0, $facebookRow['seven_day_views']);
             $this->assertSame(150, $facebookRow['yesterday_unique_views']);
             $this->assertSame(1, $facebookRow['yesterday_posts']);
             $this->assertSame(1, $facebookRow['total_posts']);
             $this->assertSame(1, $facebookRow['seven_day_posts']);
-            $this->assertSame(0, $facebookRow['yesterday_likes']);
-            $this->assertSame(0, $facebookRow['seven_day_comments']);
+            $this->assertSame(0.0, $facebookRow['yesterday_likes']);
+            $this->assertSame(1.0, $facebookRow['yesterday_shares']);
+            $this->assertSame(0.0, $facebookRow['seven_day_comments']);
             $csvRow = str_getcsv(explode("\n", trim($mail->csvContent()))[1]);
-            $this->assertSame('1', $csvRow[6]);
-            $this->assertSame('1', $csvRow[8]);
-            $this->assertSame('0', $csvRow[13]);
+            $this->assertSame('Available', $csvRow[2]);
+            $this->assertSame('1', $csvRow[7]);
+            $this->assertSame('370', $csvRow[9]);
+            $this->assertSame('0', $csvRow[14]);
+            $this->assertStringContainsString('Oct 27, 2026 to Nov 2, 2026', $mail->report['period_label']);
+            $this->assertStringContainsString('Last 7 Days Unique Views', $mail->render());
             $this->assertStringNotContainsString('N/A', $mail->render());
             $this->assertStringNotContainsString('Net Follower Change', $mail->csvContent());
             $this->assertStringNotContainsString('Previous Period Comparison', $mail->csvContent());
@@ -110,12 +119,44 @@ class DailySocialSummaryReportTest extends TestCase
         $analytics->shouldReceive('publishedPostCounts')->once()->andReturn(['total' => 0, 'day' => 0, 'period' => 0]);
         $this->app->instance(MetaAnalyticsService::class, $analytics);
 
-        Artisan::call('report:send-daily-social-summary', ['--preview' => true, '--date' => '2026-11-02']);
+        $exitCode = Artisan::call('report:send-daily-social-summary', ['--preview' => true, '--date' => '2026-11-02']);
+        $this->assertSame(0, $exitCode, Artisan::output());
 
         Mail::assertNothingSent();
         $this->assertDatabaseMissing('daily_social_reports', ['report_date' => '2026-11-02']);
         Storage::disk('local')->assertExists('reports/previews/daily-social-performance-2026-11-02.csv');
         $this->assertStringContainsString('Preview Page', Storage::disk('local')->get('reports/previews/daily-social-performance-2026-11-02.csv'));
+    }
+
+    public function test_today_views_use_daily_page_insights_even_when_no_post_was_published_today(): void
+    {
+        Mail::fake();
+        config(['social_reports.recipients' => ['manager@example.com'], 'social_reports.timezone' => 'Asia/Kolkata']);
+        $user = User::factory()->create();
+        $project = Project::create(['user_id' => $user->id, 'name' => 'Today Metrics']);
+        $account = SocialAccount::create(['user_id' => $user->id, 'project_id' => $project->id, 'provider' => 'facebook', 'provider_user_id' => 'today-user', 'user_access_token' => 'token']);
+        $page = SocialPage::create(['social_account_id' => $account->id, 'provider' => 'facebook', 'page_id' => 'today-page', 'page_name' => 'Today Page', 'page_access_token' => 'page-token', 'status' => 'active']);
+        $analytics = Mockery::mock(MetaAnalyticsService::class);
+        $analytics->shouldReceive('dashboardForDailyReport')->once()->andReturn([
+            'account' => ['followers_count' => 124],
+            'insights' => [
+                ['name' => 'page_media_view', 'values' => [['value' => 30, 'end_time' => '2026-11-03T12:00:00+0000'], ['value' => 54, 'end_time' => '2026-11-04T12:00:00+0000']]],
+                ['name' => 'page_total_media_view_unique', 'values' => [['value' => 16, 'end_time' => '2026-11-04T12:00:00+0000']]],
+            ],
+            'media' => [],
+        ]);
+        $analytics->shouldReceive('publishedPostCounts')->once()->andReturn(['total' => 3, 'day' => 0, 'period' => 3]);
+        $this->app->instance(MetaAnalyticsService::class, $analytics);
+
+        Artisan::call('report:send-daily-social-summary', ['--manual' => true, '--date' => '2026-11-04']);
+
+        Mail::assertSent(DailySocialPerformanceReport::class, function (DailySocialPerformanceReport $mail): bool {
+            $row = $mail->report['rows'][0];
+            $this->assertSame(54, $row['yesterday_views']);
+            $this->assertSame(16, $row['yesterday_unique_views']);
+            $this->assertSame('0', \App\Support\ReportMetric::display($row['seven_day_unique_views']));
+            return true;
+        });
     }
 
     public function test_admin_can_send_manual_report_to_configured_recipients_when_scheduled_email_is_disabled(): void

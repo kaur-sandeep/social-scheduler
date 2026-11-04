@@ -325,7 +325,7 @@ class MetaAnalyticsService
         // Meta interprets date-only `until` values at midnight, which can exclude
         // every post published later on the final day. Send full-day Unix bounds
         // so the report includes posts through 23:59:59 in the app's timezone.
-        $timezone = config('app.timezone', 'UTC');
+        $timezone = config('social_reports.timezone', config('app.timezone', 'UTC'));
         $mediaSince = Carbon::parse($since, $timezone)->startOfDay()->timestamp;
         $mediaUntil = Carbon::parse($until, $timezone)->endOfDay()->timestamp;
         $igFields = $includeContentInsights ? 'id,caption,media_type,media_product_type,timestamp,permalink,thumbnail_url,media_url,like_count,comments_count' : ($includePostMetrics ? 'id,media_type,media_product_type,timestamp,like_count,comments_count' : 'id,media_type,media_product_type,timestamp');
@@ -418,7 +418,9 @@ class MetaAnalyticsService
         while ($cursor->lte($end)) {
             $windowEnd = $cursor->copy()->addDays(89);
             if ($windowEnd->gt($end)) $windowEnd = $end->copy();
-            $windows[] = [$cursor->toDateString(), $windowEnd->toDateString()];
+            // Treat the requested end date as inclusive and send the next
+            // midnight as Meta's exclusive `until` boundary.
+            $windows[] = [$cursor->toDateString(), $windowEnd->copy()->addDay()->toDateString()];
             $cursor = $windowEnd->copy()->addDay();
         }
         return $windows;

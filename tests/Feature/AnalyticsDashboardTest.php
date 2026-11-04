@@ -49,6 +49,7 @@ class AnalyticsDashboardTest extends TestCase
             ]]]])
             ->push(['data' => [['name' => 'accounts_engaged', 'total_value' => ['value' => 7]]]])
             ->push(['data' => [['name' => 'follower_count', 'total_value' => ['value' => 1]]]])
+            ->push(['data' => []])
             ->push(['data' => []]);
         Http::fake(['graph.facebook.com/*' => $sequence]);
 

@@ -22,19 +22,19 @@ class SendDailySocialSummary extends Command
     protected $description = 'Email one consolidated daily Facebook and Instagram performance report';
 
     private const COLUMNS = [
-        'Account Name', 'Account Type', 'Total Followers',
+        'Account Name', 'Account Type', 'Metric Availability', 'Total Followers',
         'Yesterday Follows', 'Yesterday Unfollows',
         'Yesterday Published Posts', 'Last 7 Days Published Posts',
         'Yesterday Views', 'Last 7 Days Views',
         'Yesterday Unique Views', 'Last 7 Days Unique Views',
-        'Yesterday Likes / Reactions', 'Last 7 Days Likes / Reactions',
-        'Yesterday Comments', 'Last 7 Days Comments',
-        'Yesterday Shares', 'Last 7 Days Shares',
-        'Yesterday Saves', 'Last 7 Days Saves',
+        "Yesterday Likes / Reactions on Published Posts", 'Last 7 Days Likes / Reactions on Published Posts',
+        'Yesterday Comments on Published Posts', 'Last 7 Days Comments on Published Posts',
+        'Yesterday Shares on Published Posts', 'Last 7 Days Shares on Published Posts',
+        'Yesterday Saves on Published Posts', 'Last 7 Days Saves on Published Posts',
     ];
 
     private const COLUMN_KEYS = [
-        'account_name', 'account_type', 'followers', 'yesterday_follows',
+        'account_name', 'account_type', 'metric_availability', 'followers', 'yesterday_follows',
         'yesterday_unfollows', 'yesterday_posts', 'seven_day_posts',
         'yesterday_views', 'seven_day_views', 'yesterday_unique_views', 'seven_day_unique_views',
         'yesterday_likes', 'seven_day_likes', 'yesterday_comments', 'seven_day_comments',
@@ -89,14 +89,26 @@ class SendDailySocialSummary extends Command
 
         try {
             $report = $this->buildReport($analytics, $summaryService, $reportDate, $timezone, $manual);
+            Log::info('Daily social performance report data generated.', [
+                'report_date' => $reportDate,
+                'period' => $report['period_label'],
+                'account_rows' => count($report['rows']),
+                'accounts_with_unavailable_metrics' => collect($report['rows'])->where('account_error', true)->count(),
+            ]);
             if ($preview) {
                 $this->writePreview($report);
                 return self::SUCCESS;
             }
+            Log::info('Submitting daily social performance report to mail transport.', [
+                'report_date' => $reportDate,
+                'recipient_count' => count($recipients),
+                'recipients' => $recipients,
+                'mailer' => config('mail.default'),
+            ]);
             Mail::to($recipients)->send(new DailySocialPerformanceReport($report));
             if (! $manual) DailySocialReport::whereDate('report_date', $reportDate)->update(['status' => 'sent', 'sent_at' => now(), 'failure_message' => null]);
-            Log::info('Daily social performance report email sent.', ['report_date' => $reportDate, 'manual' => $manual, 'recipients' => $recipients, 'account_rows' => count($report['rows'])]);
-            $this->info("Consolidated report for {$reportDate} sent to ".count($recipients).' recipient(s).');
+            Log::info('Daily social performance report accepted by the configured mail transport.', ['report_date' => $reportDate, 'manual' => $manual, 'recipients' => $recipients, 'account_rows' => count($report['rows']), 'mailer' => config('mail.default')]);
+            $this->info("Consolidated report for {$reportDate} accepted by the configured mail transport for ".count($recipients).' recipient(s).');
             return self::SUCCESS;
         } catch (Throwable $exception) {
             if (! $preview && ! $manual) {
@@ -126,17 +138,18 @@ class SendDailySocialSummary extends Command
     private function buildReport(MetaAnalyticsService $analytics, AnalyticsReportSummaryService $summaryService, string $reportDate, string $timezone, bool $manual): array
     {
         $date = Carbon::parse($reportDate, $timezone)->startOfDay();
-        // Manual sends report the current day's progress; scheduled reports sent
-        // in the morning report yesterday, when Meta's daily metrics are complete.
+        // The detailed daily columns use the last completed day for scheduled
+        // runs; the seven-day window always ends on reportDate, including the
+        // current day at the 23:55 send time.
         $day = $manual ? $date : $date->copy()->subDay();
         $dayLabel = $manual ? 'today' : 'yesterday';
         $dayDate = $day->toDateString();
-        $postsUntil = $manual ? $day->copy()->subDay()->toDateString() : $dayDate;
-        $postsSince = Carbon::parse($postsUntil, $timezone)->subDays(6)->toDateString();
-        // Fetch through today for manual sends so separate Today columns can
-        // populate, but sum Last 7 Days metrics over completed days only.
+        $postsUntil = $date->toDateString();
+        $postsSince = $date->copy()->subDays(6)->toDateString();
+        // Include today's available content and metric points in the seven-day
+        // totals for both manual and scheduled sends.
         $since = $postsSince;
-        $until = $manual ? $dayDate : $postsUntil;
+        $until = $postsUntil;
         $rows = [];
 
         $pages = SocialPage::query()->with(['account.project'])
@@ -151,8 +164,10 @@ class SendDailySocialSummary extends Command
                 try {
                     $data = $analytics->dashboardForDailyReport($page, $platform, $since, $until);
                     $row = $this->applyAnalytics($row, $data, $analytics, $page, $platform, $since, $until, $postsSince, $postsUntil, $dayDate, $timezone);
+                    $row['metric_availability'] = ! empty($data['insights_unavailable']) ? 'Partial data' : 'Available';
                 } catch (Throwable $exception) {
                     $row['account_error'] = true;
+                    $row['metric_availability'] = 'Unavailable';
                     Log::warning('An account was omitted from daily social metrics because analytics could not be fetched.', [
                         'social_page_id' => $page->id, 'platform' => $platform, 'report_date' => $reportDate,
                         'message' => $exception->getMessage(),
@@ -166,7 +181,7 @@ class SendDailySocialSummary extends Command
         $report = [
             'report_date' => $reportDate,
             'generated_at' => now($timezone)->format('M j, Y g:i A T'),
-            'period_label' => Carbon::parse($postsSince)->format('M j, Y').' to '.Carbon::parse($postsUntil)->format('M j, Y').' (last 7 completed days; '.$dayLabel.': '.$day->format('M j, Y').')',
+            'period_label' => Carbon::parse($postsSince, $timezone)->format('M j, Y').' to '.Carbon::parse($postsUntil, $timezone)->format('M j, Y').' (last 7 calendar days, including today; '.$dayLabel.': '.$day->format('M j, Y').')',
             'rows' => $rows,
             'columns' => $columns,
             'column_keys' => self::COLUMN_KEYS,
@@ -183,28 +198,30 @@ class SendDailySocialSummary extends Command
             'project' => $page->account?->project?->name ?? 'Unknown project',
             'account_type' => ucfirst($platform),
             'account_name' => $platform === 'instagram' ? '@'.($page->instagram_username ?: $page->page_name) : ($page->page_name ?: 'Unknown account'),
-            'followers' => 0, 'yesterday_net_change' => 0, 'yesterday_follows' => 0, 'yesterday_unfollows' => 0,
-            'total_posts' => 0, 'yesterday_posts' => 0, 'seven_day_posts' => 0,
-            'seven_day_views' => 0, 'yesterday_views' => 0, 'seven_day_unique_views' => 0, 'yesterday_unique_views' => 0,
-            'seven_day_likes' => 0, 'yesterday_likes' => 0, 'seven_day_comments' => 0, 'yesterday_comments' => 0,
-            'seven_day_shares' => 0, 'yesterday_shares' => 0, 'seven_day_saves' => 0, 'yesterday_saves' => 0,
+            'metric_availability' => 'Unavailable',
+            'followers' => null, 'yesterday_net_change' => null, 'yesterday_follows' => null, 'yesterday_unfollows' => null,
+            'total_posts' => null, 'yesterday_posts' => null, 'seven_day_posts' => null,
+            'seven_day_views' => null, 'yesterday_views' => null, 'seven_day_unique_views' => null, 'yesterday_unique_views' => null,
+            'seven_day_likes' => null, 'yesterday_likes' => null, 'seven_day_comments' => null, 'yesterday_comments' => null,
+            'seven_day_shares' => null, 'yesterday_shares' => null, 'seven_day_saves' => null, 'yesterday_saves' => null,
             'account_error' => false,
         ];
     }
 
     private function applyAnalytics(array $row, array $data, MetaAnalyticsService $analytics, SocialPage $page, string $platform, string $since, string $until, string $postsSince, string $postsUntil, string $day, string $timezone): array
     {
-        $row['followers'] = ReportMetric::value(data_get($data, 'account.followers_count') ?? data_get($data, 'account.fan_count'));
+        $followers = data_get($data, 'account.followers_count') ?? data_get($data, 'account.fan_count');
+        $row['followers'] = is_numeric($followers) ? ReportMetric::value($followers) : null;
         $metricMap = collect($data['insights'] ?? [])->keyBy('name');
-        $follows = ReportMetric::value($this->dailyMetric($metricMap->get('page_daily_follows'), $day, $timezone));
-        $unfollows = ReportMetric::value($this->dailyMetric($metricMap->get('page_daily_unfollows'), $day, $timezone));
+        $follows = $this->dailyMetric($metricMap->get('page_daily_follows'), $day, $timezone);
+        $unfollows = $this->dailyMetric($metricMap->get('page_daily_unfollows'), $day, $timezone);
         if ($platform === 'facebook') {
             $row['yesterday_follows'] = $follows;
             $row['yesterday_unfollows'] = $unfollows;
             if (is_numeric($follows) && is_numeric($unfollows)) $row['yesterday_net_change'] = (float) $follows - (float) $unfollows;
         }
 
-        $viewsName = $platform === 'instagram' ? 'views' : 'post_media_view';
+        $viewsName = $platform === 'instagram' ? 'views' : 'page_media_view';
         $uniqueName = $platform === 'instagram' ? 'reach' : 'page_total_media_view_unique';
         $items = collect($data['media'] ?? []);
         $todayItems = $items->filter(fn ($item) => $this->publishedDate($item, $timezone) === $day);
@@ -212,22 +229,28 @@ class SendDailySocialSummary extends Command
             $publishedDate = $this->publishedDate($item, $timezone);
             return $publishedDate !== null && $publishedDate >= $postsSince && $publishedDate <= $postsUntil;
         });
-        $sumPostMetric = fn ($posts, string $name) => $posts->sum(fn ($item) => is_numeric(data_get($item, 'metrics.'.$name)) ? (float) data_get($item, 'metrics.'.$name) : 0);
-        $row['seven_day_views'] = ReportMetric::value($sumPostMetric($periodItems, $viewsName));
-        $row['yesterday_views'] = ReportMetric::value($sumPostMetric($todayItems, $viewsName));
-        $row['yesterday_unique_views'] = ReportMetric::value($this->dailyMetric($metricMap->get($uniqueName), $day, $timezone));
-        // Daily unique audiences overlap across days. There is no reliable period-unique
-        // value in this endpoint response, so deliberately do not sum daily reach.
+        $sumPostMetric = function ($posts, string $name): int|float|null {
+            return $posts->sum(fn ($item) => is_numeric(data_get($item, 'metrics.'.$name))
+                ? (float) data_get($item, 'metrics.'.$name)
+                : 0);
+        };
+        // Views and unique viewers are page/account daily insights, not lifetime
+        // views on content that happened to be published on that same date.
+        $row['seven_day_views'] = $this->sumMetric($metricMap->get($viewsName), $postsSince, $postsUntil, $timezone);
+        $row['yesterday_views'] = $this->dailyMetric($metricMap->get($viewsName), $day, $timezone);
+        $row['yesterday_unique_views'] = $this->dailyMetric($metricMap->get($uniqueName), $day, $timezone);
+        // Daily unique audiences overlap across days. A seven-day unique total
+        // is not available from these daily metrics, so leave it unavailable.
         $likesName = $platform === 'instagram' ? 'likes' : 'reactions';
-        $row['yesterday_likes'] = ReportMetric::value($sumPostMetric($todayItems, $likesName));
-        $row['seven_day_likes'] = ReportMetric::value($sumPostMetric($periodItems, $likesName));
-        $row['yesterday_comments'] = ReportMetric::value($sumPostMetric($todayItems, 'comments'));
-        $row['seven_day_comments'] = ReportMetric::value($sumPostMetric($periodItems, 'comments'));
-        $row['yesterday_shares'] = ReportMetric::value($sumPostMetric($todayItems, 'shares'));
-        $row['seven_day_shares'] = ReportMetric::value($sumPostMetric($periodItems, 'shares'));
+        $row['yesterday_likes'] = $sumPostMetric($todayItems, $likesName);
+        $row['seven_day_likes'] = $sumPostMetric($periodItems, $likesName);
+        $row['yesterday_comments'] = $sumPostMetric($todayItems, 'comments');
+        $row['seven_day_comments'] = $sumPostMetric($periodItems, 'comments');
+        $row['yesterday_shares'] = $sumPostMetric($todayItems, 'shares');
+        $row['seven_day_shares'] = $sumPostMetric($periodItems, 'shares');
         if ($platform === 'instagram') {
-            $row['yesterday_saves'] = ReportMetric::value($sumPostMetric($todayItems, 'saved'));
-            $row['seven_day_saves'] = ReportMetric::value($sumPostMetric($periodItems, 'saved'));
+            $row['yesterday_saves'] = $sumPostMetric($todayItems, 'saved');
+            $row['seven_day_saves'] = $sumPostMetric($periodItems, 'saved');
         }
         $postCounts = $analytics->publishedPostCounts(
             $page,
