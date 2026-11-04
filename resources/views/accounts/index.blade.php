@@ -52,6 +52,10 @@
                 @csrf
                 <button class="btn btn-sm btn-outline-danger" data-confirm-delete data-confirm-title="Disconnect account" data-confirm-message="Are you sure you want to disconnect this account?"> <i class="bi bi-link-45deg"></i> {{ $account->provider === 'youtube' ? 'Disconnect YouTube' : 'Disconnect' }}</button>
             </form>
+            @if($account->provider === 'instagram' && in_array($account->status, ['active', 'reauthorization_required'], true) && $account->pages->contains(fn ($page) => $page->status === 'active'))
+                @php($instagramPage = $account->pages->first(fn ($page) => $page->status === 'active'))
+                <a class="btn btn-sm btn-outline-danger" href="{{ route('accounts.analytics', ['page' => $instagramPage, 'platform' => 'instagram', 'project_id' => $project?->id]) }}"><i class="bi bi-bar-chart-line"></i> Instagram Professional Dashboard</a>
+            @endif
             @if($account->provider === 'linkedin')<a class="btn btn-sm btn-outline-primary" href="{{ route('linkedin.redirect', ['project_id' => $project?->id]) }}"><i class="bi bi-arrow-repeat"></i> Reconnect &amp; Sync Pages</a>@endif
         </div>
         <div class="row g-3">
@@ -71,6 +75,9 @@
                                     @if($page->instagram_business_id && $page->instagram_username)<a class="btn btn-sm btn-outline-danger" href="{{ route('accounts.analytics', ['page' => $page, 'platform' => 'instagram', 'project_id' => $project?->id]) }}"><i class="bi bi-instagram"></i> Instagram Professional Dashboard</a>@endif
                                     @if(!$page->instagram_business_id)<a class="btn btn-sm btn-outline-danger" href="{{ route('instagram.redirect', ['project_id' => $project?->id]) }}"><i class="bi bi-instagram"></i> Connect Instagram</a>@endif
                                 </div>
+                            @endif
+                            @if($account->provider === 'instagram' && in_array($account->status, ['active', 'reauthorization_required'], true) && $page->status === 'active')
+                                <div class="d-flex flex-wrap gap-2 mt-2"><a class="btn btn-sm btn-outline-danger" href="{{ route('accounts.analytics', ['page' => $page, 'platform' => 'instagram', 'project_id' => $project?->id]) }}"><i class="bi bi-bar-chart-line"></i> Instagram Professional Dashboard</a></div>
                             @endif
                         </div>
                     </div>

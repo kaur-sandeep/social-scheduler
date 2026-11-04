@@ -164,7 +164,22 @@ class SendDailySocialSummary extends Command
                 try {
                     $data = $instagram->dashboardForDailyReport($page, $since, $until);
                     $row = $this->applyAnalytics($row, $data, $analytics, $page, 'instagram', $since, $until, $postsSince, $postsUntil, $dayDate, $timezone);
-                    $row['metric_availability'] = ! empty($data['insights_unavailable']) ? 'Partial data' : 'Available';
+                    try {
+                        // Instagram returns views as a single total for a multi-day
+                        // request. Fetch the report day separately so its value is
+                        // not incorrectly shown as zero beside the seven-day total.
+                        $dailyData = $instagram->dashboardForDailyReport($page, $dayDate, $dayDate, false);
+                        $dailyMetrics = collect($dailyData['insights'] ?? [])->keyBy('name');
+                        $row['yesterday_views'] = $this->dailyMetric($dailyMetrics->get('views'), $dayDate, $timezone);
+                        $row['yesterday_unique_views'] = $this->dailyMetric($dailyMetrics->get('reach'), $dayDate, $timezone);
+                    } catch (Throwable $exception) {
+                        Log::notice('Instagram single-day insight lookup failed for daily report.', [
+                            'social_page_id' => $page->id,
+                            'report_day' => $dayDate,
+                            'message' => $exception->getMessage(),
+                        ]);
+                    }
+                    $row['metric_availability'] = (! empty($data['insights_unavailable']) || ! empty($data['media_unavailable'])) ? 'Partial data' : 'Available';
                 } catch (Throwable $exception) {
                     $row['account_error'] = true;
                     $row['metric_availability'] = 'Unavailable';
@@ -238,6 +253,7 @@ class SendDailySocialSummary extends Command
 
         $viewsName = $platform === 'instagram' ? 'views' : 'page_media_view';
         $uniqueName = $platform === 'instagram' ? 'reach' : 'page_total_media_view_unique';
+        $mediaUnavailable = $platform === 'instagram' && ! empty($data['media_unavailable']);
         $items = collect($data['media'] ?? []);
         $todayItems = $items->filter(fn ($item) => $this->publishedDate($item, $timezone) === $day);
         $periodItems = $items->filter(function ($item) use ($postsSince, $postsUntil, $timezone): bool {
@@ -257,21 +273,21 @@ class SendDailySocialSummary extends Command
         // Daily unique audiences overlap across days. A seven-day unique total
         // is not available from these daily metrics, so leave it unavailable.
         $likesName = $platform === 'instagram' ? 'likes' : 'reactions';
-        $row['yesterday_likes'] = $sumPostMetric($todayItems, $likesName);
-        $row['seven_day_likes'] = $sumPostMetric($periodItems, $likesName);
-        $row['yesterday_comments'] = $sumPostMetric($todayItems, 'comments');
-        $row['seven_day_comments'] = $sumPostMetric($periodItems, 'comments');
-        $row['yesterday_shares'] = $sumPostMetric($todayItems, 'shares');
-        $row['seven_day_shares'] = $sumPostMetric($periodItems, 'shares');
+        $row['yesterday_likes'] = $mediaUnavailable ? null : $sumPostMetric($todayItems, $likesName);
+        $row['seven_day_likes'] = $mediaUnavailable ? null : $sumPostMetric($periodItems, $likesName);
+        $row['yesterday_comments'] = $mediaUnavailable ? null : $sumPostMetric($todayItems, 'comments');
+        $row['seven_day_comments'] = $mediaUnavailable ? null : $sumPostMetric($periodItems, 'comments');
+        $row['yesterday_shares'] = $mediaUnavailable ? null : $sumPostMetric($todayItems, 'shares');
+        $row['seven_day_shares'] = $mediaUnavailable ? null : $sumPostMetric($periodItems, 'shares');
         if ($platform === 'instagram') {
-            $row['yesterday_saves'] = $sumPostMetric($todayItems, 'saved');
-            $row['seven_day_saves'] = $sumPostMetric($periodItems, 'saved');
+            $row['yesterday_saves'] = $mediaUnavailable ? null : $sumPostMetric($todayItems, 'saved');
+            $row['seven_day_saves'] = $mediaUnavailable ? null : $sumPostMetric($periodItems, 'saved');
         }
         if ($page->provider === 'instagram') {
             $postCounts = [
                 'total' => data_get($data, 'account.media_count'),
-                'day' => $todayItems->count(),
-                'period' => $periodItems->count(),
+                'day' => $mediaUnavailable ? null : $todayItems->count(),
+                'period' => $mediaUnavailable ? null : $periodItems->count(),
             ];
         } else {
             $postCounts = $analytics->publishedPostCounts(

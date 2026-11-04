@@ -116,4 +116,42 @@ class InstagramLoginTest extends TestCase
         $this->assertSame(3, $data['media'][0]['metrics']['saved']);
         $this->assertNotNull($page->fresh()->last_synced_at);
     }
+
+    public function test_invalid_instagram_token_is_refreshed_and_saved_before_retrying(): void
+    {
+        $user = User::factory()->create();
+        $project = Project::create(['user_id' => $user->id, 'name' => 'Token refresh']);
+        $account = $user->socialAccounts()->create([
+            'project_id' => $project->id, 'provider' => 'instagram', 'provider_user_id' => 'ig-refresh',
+            'user_access_token' => 'rejected-token', 'token_expires_at' => now()->addDays(50),
+            'status' => 'active', 'connected_at' => now()->subDays(3),
+        ]);
+        $page = SocialPage::create([
+            'social_account_id' => $account->id, 'provider' => 'instagram', 'page_id' => 'ig-refresh',
+            'page_name' => 'refresh_test', 'page_access_token' => 'rejected-token', 'status' => 'active',
+        ]);
+        $profileCalls = 0;
+        Http::fake(function ($request) use (&$profileCalls) {
+            $path = parse_url($request->url(), PHP_URL_PATH);
+            if (str_ends_with($path, '/refresh_access_token')) {
+                return Http::response(['access_token' => 'refreshed-token', 'expires_in' => 5184000], 200);
+            }
+            if (str_ends_with($path, '/ig-refresh')) {
+                $profileCalls++;
+                if ($profileCalls === 1) return Http::response(['error' => ['message' => 'Invalid OAuth 2.0 Access Token', 'code' => 190]], 401);
+                return Http::response(['user_id' => 'ig-refresh', 'username' => 'refresh_test', 'followers_count' => 10, 'media_count' => 2], 200);
+            }
+            if (str_contains($path, '/insights')) return Http::response(['data' => []], 200);
+            if (str_ends_with($path, '/media')) return Http::response(['data' => []], 200);
+            return Http::response(['data' => []], 200);
+        });
+
+        $data = app(InstagramLoginService::class)->dashboardForDailyReport($page, '2026-10-29', '2026-11-04');
+
+        $this->assertSame(10, $data['account']['followers_count']);
+        $this->assertSame('refreshed-token', $account->fresh()->user_access_token);
+        $this->assertSame('refreshed-token', $page->fresh()->page_access_token);
+        $this->assertSame('active', $account->fresh()->status);
+        $this->assertSame(2, $profileCalls);
+    }
 }

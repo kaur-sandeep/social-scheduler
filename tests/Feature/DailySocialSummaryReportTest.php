@@ -9,6 +9,7 @@ use App\Models\SocialAccount;
 use App\Models\SocialPage;
 use App\Models\User;
 use App\Services\Social\MetaAnalyticsService;
+use App\Services\Social\InstagramLoginService;
 use Illuminate\Contracts\Cache\Lock as CacheLock;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
@@ -155,6 +156,46 @@ class DailySocialSummaryReportTest extends TestCase
             $this->assertSame(54, $row['yesterday_views']);
             $this->assertSame(16, $row['yesterday_unique_views']);
             $this->assertSame('0', \App\Support\ReportMetric::display($row['seven_day_unique_views']));
+            return true;
+        });
+    }
+
+    public function test_manual_email_contains_data_from_standalone_instagram_account(): void
+    {
+        Mail::fake();
+        config(['social_reports.recipients' => ['manager@example.com'], 'social_reports.timezone' => 'Asia/Kolkata']);
+        $user = User::factory()->create();
+        $project = Project::create(['user_id' => $user->id, 'name' => 'Bollies']);
+        $account = SocialAccount::create([
+            'user_id' => $user->id, 'project_id' => $project->id, 'provider' => 'instagram',
+            'provider_user_id' => 'ig-bollies', 'user_access_token' => 'token', 'status' => 'active',
+        ]);
+        $page = SocialPage::create([
+            'social_account_id' => $account->id, 'provider' => 'instagram', 'page_id' => 'ig-bollies',
+            'page_name' => 'bollies', 'page_access_token' => 'token', 'status' => 'active',
+        ]);
+        $analytics = Mockery::mock(MetaAnalyticsService::class);
+        $this->app->instance(MetaAnalyticsService::class, $analytics);
+        $instagram = Mockery::mock(InstagramLoginService::class);
+        $instagram->shouldReceive('dashboardForDailyReport')->once()->withArgs(fn ($candidate) => $candidate->is($page))->andReturn([
+            'account' => ['followers_count' => 625, 'media_count' => 14],
+            'insights' => [['name' => 'views', 'values' => [['value' => 89, 'end_time' => '2026-11-04T00:00:00+0000']]]],
+            'media' => [['id' => 'media-bollies', 'published_at' => '2026-11-04T11:00:00+0530', 'metrics' => ['likes' => 21, 'comments' => 3, 'saved' => 2, 'shares' => 1]]],
+            'insights_unavailable' => [],
+        ]);
+        $this->app->instance(InstagramLoginService::class, $instagram);
+
+        Artisan::call('report:send-daily-social-summary', ['--manual' => true, '--date' => '2026-11-04']);
+
+        Mail::assertSent(DailySocialPerformanceReport::class, function (DailySocialPerformanceReport $mail) use ($page): bool {
+            $row = collect($mail->report['rows'])->firstWhere('account_name', '@bollies');
+            $this->assertNotNull($row);
+            $this->assertSame('Available', $row['metric_availability']);
+            $this->assertSame(625, $row['followers']);
+            $this->assertSame(89.0, $row['seven_day_views']);
+            $this->assertSame(1, $row['yesterday_posts']);
+            $this->assertSame(21.0, $row['yesterday_likes']);
+            $this->assertStringContainsString('@bollies', $mail->render());
             return true;
         });
     }

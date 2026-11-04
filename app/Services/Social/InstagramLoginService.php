@@ -108,58 +108,92 @@ class InstagramLoginService
         return $account->refresh();
     }
 
-    public function dashboardForDailyReport(SocialPage $page, string $since, string $until): array
+    public function dashboardForDailyReport(SocialPage $page, string $since, string $until, bool $includeMedia = true): array
     {
         $account = $page->account;
-        if (! $account || $page->provider !== 'instagram' || $account->status !== 'active' || $page->status !== 'active') {
+        if (! $account || $page->provider !== 'instagram' || ! in_array($account->status, ['active', 'reauthorization_required'], true) || $page->status !== 'active') {
             throw new RuntimeException('This Instagram account is disconnected.');
         }
 
         $token = $this->freshToken($page);
-        $id = $page->page_id;
-        $profile = $this->request('/'.$id, [
+        $profileQuery = [
             'fields' => 'user_id,username,account_type,media_count,followers_count,profile_picture_url',
             'access_token' => $token,
-        ]);
+        ];
+        // Instagram Login tokens are scoped to the authenticated Instagram user.
+        // Resolve that user through /me instead of assuming the stored ID is
+        // interchangeable with the ID returned by other Meta login products.
+        $profile = $this->requestWithTokenRecovery($page, '/me', $profileQuery, $token);
+        if ($account->status === 'reauthorization_required') {
+            $account->update(['status' => 'active']);
+        }
         $insights = [];
         $unavailable = [];
-        foreach ([['views', 'day'], ['reach', 'day'], ['follower_count', 'lifetime']] as [$metric, $period]) {
-            $params = ['metric' => $metric, 'period' => $period, 'access_token' => $token];
+        foreach ([['views', 'day', 'total_value'], ['reach', 'day', 'time_series'], ['follower_count', 'lifetime', 'total_value']] as [$metric, $period, $metricType]) {
+            $params = ['metric' => $metric, 'period' => $period, 'metric_type' => $metricType, 'access_token' => $token];
             if ($metric !== 'follower_count') {
                 $params['since'] = Carbon::parse($since)->startOfDay()->timestamp;
                 $params['until'] = Carbon::parse($until)->endOfDay()->timestamp;
             }
             try {
-                $result = $this->request('/'.$id.'/insights', $params);
-                foreach ($result['data'] ?? [] as $row) $insights[] = $this->normalizeMetric($row, $until);
+                $result = $this->requestWithTokenRecovery($page, '/me/insights', $params, $token);
+                foreach ($result['data'] ?? [] as $row) $insights[] = $this->normalizeMetric($row, $until, $since === $until);
             } catch (RuntimeException $exception) {
                 $unavailable[] = $metric;
                 Log::notice('Instagram Login insight is unavailable for the connected account.', ['social_page_id' => $page->id, 'metric' => $metric, 'message' => $exception->getMessage()]);
             }
         }
 
-        $media = $this->paged('/'.$id.'/media', [
-            'fields' => 'id,caption,media_type,media_product_type,timestamp,permalink,like_count,comments_count',
-            'limit' => 100,
-            'access_token' => $token,
-        ]);
+        $mediaUnavailable = false;
+        $media = [];
+        if ($includeMedia) {
+            try {
+                $media = $this->pagedWithTokenRecovery($page, '/me/media', [
+                    'fields' => 'id,caption,media_type,media_product_type,timestamp,permalink,like_count,comments_count',
+                    'limit' => 100,
+                    'access_token' => $token,
+                ], $token);
+            } catch (RuntimeException $exception) {
+                // Media details enrich the report; they must not block profile and
+                // account-level insights when Meta rejects the media edge.
+                $mediaUnavailable = true;
+                Log::notice('Instagram post details are unavailable; returning account-level analytics.', [
+                    'social_page_id' => $page->id,
+                    'message' => $exception->getMessage(),
+                ]);
+            }
+        }
         $mediaRows = [];
+        $timezone = config('social_reports.timezone', config('app.timezone', 'UTC'));
         foreach ($media as $item) {
             if (empty($item['timestamp'])) continue;
-            $date = Carbon::parse($item['timestamp'])->toDateString();
+            $date = Carbon::parse($item['timestamp'])->setTimezone($timezone)->toDateString();
             if ($date < $since || $date > $until) continue;
             $metrics = ['likes' => $item['like_count'] ?? null, 'comments' => $item['comments_count'] ?? null];
             try {
-                $postInsights = $this->request('/'.$item['id'].'/insights', ['metric' => 'views,reach,saved,shares', 'metric_type' => 'total_value', 'access_token' => $token]);
+                $postInsights = $this->requestWithTokenRecovery($page, '/'.$item['id'].'/insights', ['metric' => 'views,reach,saved,shares', 'metric_type' => 'total_value', 'access_token' => $token], $token);
                 foreach ($postInsights['data'] ?? [] as $metric) $metrics[$metric['name']] = data_get($metric, 'total_value.value', data_get($metric, 'values.0.value'));
             } catch (RuntimeException $exception) {
                 Log::notice('Instagram media insights are unavailable.', ['social_page_id' => $page->id, 'media_id' => $item['id'] ?? null, 'message' => $exception->getMessage()]);
             }
-            $mediaRows[] = ['id' => $item['id'], 'published_at' => $item['timestamp'], 'metrics' => $metrics];
+            $mediaRows[] = [
+                'id' => $item['id'],
+                'text' => $item['caption'] ?? '',
+                'type' => $item['media_product_type'] ?? $item['media_type'] ?? 'Other',
+                'url' => $item['permalink'] ?? null,
+                'thumbnail' => $item['thumbnail_url'] ?? $item['media_url'] ?? null,
+                'published_at' => $item['timestamp'],
+                'metrics' => $metrics,
+            ];
         }
 
         $page->update(['last_synced_at' => now(), 'page_name' => $profile['username'] ?? $page->page_name, 'profile_image' => $profile['profile_picture_url'] ?? $page->profile_image]);
-        return ['account' => ['followers_count' => $profile['followers_count'] ?? null, 'media_count' => $profile['media_count'] ?? null], 'insights' => $insights, 'media' => $mediaRows, 'insights_unavailable' => $unavailable];
+        return ['account' => ['followers_count' => $profile['followers_count'] ?? null, 'media_count' => $profile['media_count'] ?? null], 'insights' => $insights, 'media' => $mediaRows, 'media_unavailable' => $mediaUnavailable, 'insights_unavailable' => $unavailable];
+    }
+
+    public function dashboard(SocialPage $page, string $since, string $until): array
+    {
+        return $this->dashboardForDailyReport($page, $since, $until);
     }
 
     private function freshToken(SocialPage $page): string
@@ -169,10 +203,29 @@ class InstagramLoginService
         if (! $token) throw new RuntimeException('Instagram access token is missing. Reconnect this account.');
         if ($account?->token_expires_at?->gt(now()->addDays(7))) return $token;
 
-        $response = Http::timeout(25)->get($this->base.'/refresh_access_token', ['grant_type' => 'ig_refresh_token', 'access_token' => $token]);
+        return $this->refreshToken($page);
+    }
+
+    private function refreshToken(SocialPage $page): string
+    {
+        $account = $page->account;
+        $token = $page->page_access_token ?: $account?->user_access_token;
+        if (! $token || ! $account) throw new RuntimeException('Instagram access token is missing. Reconnect this account.');
+
+        // Instagram's long-lived token refresh endpoint is not versioned.
+        $response = Http::timeout(25)->get('https://graph.instagram.com/refresh_access_token', [
+            'grant_type' => 'ig_refresh_token',
+            'access_token' => $token,
+        ]);
         if ($response->failed() || ! $response->json('access_token')) {
             $account->update(['status' => 'reauthorization_required']);
-            throw new RuntimeException('Instagram access token expired or could not be refreshed. Reconnect this account.');
+            Log::warning('Instagram access token refresh failed.', [
+                'social_page_id' => $page->id,
+                'http_status' => $response->status(),
+                'meta_error' => data_get($response->json(), 'error.message'),
+                'meta_error_code' => data_get($response->json(), 'error.code'),
+            ]);
+            throw new RuntimeException('Instagram rejected this access token. Reconnect the Instagram account and retry.');
         }
         $token = $response->json('access_token');
         $expires = now()->addSeconds((int) $response->json('expires_in', 5184000));
@@ -181,11 +234,61 @@ class InstagramLoginService
         return $token;
     }
 
-    private function normalizeMetric(array $metric, string $until): array
+    private function isInvalidTokenError(RuntimeException $exception): bool
+    {
+        $message = strtolower($exception->getMessage());
+        return str_contains($message, 'invalid oauth')
+            || str_contains($message, 'invalid access token')
+            || str_contains($message, 'cannot parse access token');
+    }
+
+    private function requestWithTokenRecovery(SocialPage $page, string $path, array $query, string &$token): array
+    {
+        try {
+            return $this->request($path, $query);
+        } catch (RuntimeException $exception) {
+            if (! $this->isInvalidTokenError($exception)) throw $exception;
+            Log::warning('Instagram rejected an API token; attempting a refresh and one retry.', ['social_page_id' => $page->id, 'api_path' => $path]);
+            $token = $this->refreshToken($page);
+            $query['access_token'] = $token;
+            try {
+                return $this->request($path, $query);
+            } catch (RuntimeException $retryException) {
+                // A valid refreshed token can still fail for an unrelated reason
+                // (for example, a permission or unsupported-field error). Only
+                // mark the account for reauthorization if Meta rejects the token.
+                if (! $this->isInvalidTokenError($retryException)) throw $retryException;
+
+                $page->account?->update(['status' => 'reauthorization_required']);
+                throw new RuntimeException('Instagram still rejects the refreshed token. Reconnect the Instagram account.', previous: $retryException);
+            }
+        }
+    }
+
+    private function pagedWithTokenRecovery(SocialPage $page, string $path, array $query, string &$token): array
+    {
+        try {
+            return $this->paged($path, $query);
+        } catch (RuntimeException $exception) {
+            if (! $this->isInvalidTokenError($exception)) throw $exception;
+            Log::warning('Instagram rejected a media API token; attempting a refresh and one retry.', ['social_page_id' => $page->id, 'api_path' => $path]);
+            $token = $this->refreshToken($page);
+            $query['access_token'] = $token;
+            try {
+                return $this->paged($path, $query);
+            } catch (RuntimeException $retryException) {
+                if (! $this->isInvalidTokenError($retryException)) throw $retryException;
+
+                throw new RuntimeException('Instagram still rejects the refreshed token for the media endpoint.', previous: $retryException);
+            }
+        }
+    }
+
+    private function normalizeMetric(array $metric, string $until, bool $singleDay = false): array
     {
         if (isset($metric['total_value'])) {
             $metric['values'] = [['value' => data_get($metric, 'total_value.value'), 'end_time' => $until]];
-            $metric['_analytics_total_only'] = true;
+            $metric['_analytics_total_only'] = ! $singleDay;
         }
         return $metric;
     }
@@ -196,7 +299,18 @@ class InstagramLoginService
         $url = $this->base.$path;
         do {
             $response = Http::timeout(25)->get($url, $query);
-            if ($response->failed()) throw new RuntimeException(data_get($response->json(), 'error.message', 'Instagram media request failed.'));
+            if ($response->failed()) {
+                $error = $response->json('error') ?? [];
+                Log::warning('Instagram Graph API media request failed.', [
+                    'http_status' => $response->status(),
+                    'meta_error_code' => $error['code'] ?? null,
+                    'meta_error_subcode' => $error['error_subcode'] ?? null,
+                    'meta_error_type' => $error['type'] ?? null,
+                    'meta_error_message' => $error['message'] ?? null,
+                    'fbtrace_id' => $error['fbtrace_id'] ?? null,
+                ]);
+                throw new RuntimeException(data_get($response->json(), 'error.message', 'Instagram media request failed (HTTP '.$response->status().').'));
+            }
             $json = $response->json() ?? [];
             $items = array_merge($items, $json['data'] ?? []);
             $url = data_get($json, 'paging.next');
@@ -208,7 +322,19 @@ class InstagramLoginService
     private function request(string $path, array $query): array
     {
         $response = Http::timeout(25)->get($this->base.$path, $query);
-        if ($response->failed()) throw new RuntimeException(data_get($response->json(), 'error.message', 'Instagram API request failed (HTTP '.$response->status().').'));
+        if ($response->failed()) {
+            $error = $response->json('error') ?? [];
+            Log::warning('Instagram Graph API request failed.', [
+                'api_path' => $path,
+                'http_status' => $response->status(),
+                'meta_error_code' => $error['code'] ?? null,
+                'meta_error_subcode' => $error['error_subcode'] ?? null,
+                'meta_error_type' => $error['type'] ?? null,
+                'meta_error_message' => $error['message'] ?? null,
+                'fbtrace_id' => $error['fbtrace_id'] ?? null,
+            ]);
+            throw new RuntimeException(data_get($response->json(), 'error.message', 'Instagram API request failed (HTTP '.$response->status().').'));
+        }
         return $response->json() ?? [];
     }
 }

@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Admin;
 use App\Http\Controllers\Controller;
 use App\Models\SocialPage;
 use App\Services\Social\MetaAnalyticsService;
+use App\Services\Social\InstagramLoginService;
 use Illuminate\Http\Request;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Support\Carbon;
@@ -56,7 +57,7 @@ class AnalyticsController extends Controller
         }
     }
 
-    public function index(Request $request, MetaAnalyticsService $analytics): View
+    public function index(Request $request, MetaAnalyticsService $analytics, InstagramLoginService $instagram): View
     {
         $request->validate(['range' => ['nullable', 'in:today,yesterday,last_7_days,last_30_days,this_month,last_month'], 'platform' => ['nullable', 'in:all,facebook,instagram']]);
         $timezone = $request->user()->timezone ?: config('app.timezone');
@@ -71,17 +72,23 @@ class AnalyticsController extends Controller
             default => [$now->copy()->subDays(7)->toDateString(), $now->copy()->subDay()->toDateString()],
         };
         $platform = $request->string('platform', 'all')->toString();
-        $pages = SocialPage::query()->with('account')->where('provider', 'facebook')->where('status', 'active')
+        $pages = SocialPage::query()->with('account')->whereIn('provider', ['facebook', 'instagram'])->where('status', 'active')
             ->whereHas('account', fn ($q) => $q->where('user_id', $request->user()->id)->where('status', 'active'))
             ->orderBy('page_name')->get();
         $reports = [];
         foreach ($pages as $page) {
-            foreach (['facebook', 'instagram'] as $channel) {
-                if ($channel === 'instagram' && ! $page->instagram_business_id) continue;
+            foreach ($page->provider === 'instagram' ? ['instagram'] : ['facebook', 'instagram'] as $channel) {
+                if ($page->provider === 'facebook' && $channel === 'instagram' && ! $page->instagram_business_id) continue;
                 if ($platform !== 'all' && $platform !== $channel) continue;
                 try {
-                    $data = $analytics->dashboard($page, $channel, $since, $until);
-                    $postCounts = $analytics->publishedPostCounts($page, $channel, $since, $until, $until, $timezone, data_get($data, 'account.media_count'));
+                    if ($page->provider === 'instagram') {
+                        $data = $instagram->dashboard($page, $since, $until);
+                        $postCount = count($data['media'] ?? []);
+                    } else {
+                        $data = $analytics->dashboard($page, $channel, $since, $until);
+                        $postCount = $analytics->publishedPostCounts($page, $channel, $since, $until, $until, $timezone, data_get($data, 'account.media_count'))['period'];
+                    }
+                    $postCounts = ['period' => $postCount];
                     $reports[] = ['page' => $page, 'platform' => $channel, 'data' => $data, 'published_count' => $postCounts['period'], 'error' => null];
                 } catch (Throwable $e) {
                     $reports[] = ['page' => $page, 'platform' => $channel, 'data' => null, 'error' => $e->getMessage()];
@@ -91,13 +98,13 @@ class AnalyticsController extends Controller
         return view('analytics.index', compact('reports', 'range', 'since', 'until', 'platform'));
     }
 
-    public function show(Request $request, SocialPage $page, string $platform, MetaAnalyticsService $analytics): View|RedirectResponse|StreamedResponse
+    public function show(Request $request, SocialPage $page, string $platform, MetaAnalyticsService $analytics, InstagramLoginService $instagram): View|RedirectResponse|StreamedResponse
     {
         abort_unless(in_array($platform, ['facebook', 'instagram'], true), 404);
-        abort_unless($page->provider === 'facebook' && ($platform === 'facebook' || $page->instagram_business_id), 404);
+        abort_unless(($page->provider === 'facebook' && ($platform === 'facebook' || $page->instagram_business_id)) || ($page->provider === 'instagram' && $platform === 'instagram'), 404);
         abort_unless($page->status === 'active' && $page->account()
             ->where('user_id', $request->user()->id)
-            ->where('status', 'active')
+            ->whereIn('status', $page->provider === 'instagram' ? ['active', 'reauthorization_required'] : ['active'])
             ->when($request->filled('project_id'), fn ($query) => $query->where('project_id', $request->integer('project_id')))
             ->exists(), 404);
         $timezone = $request->user()->timezone ?: config('app.timezone');
@@ -115,9 +122,16 @@ class AnalyticsController extends Controller
         };
         abort_if(Carbon::parse($since)->diffInDays(Carbon::parse($until)) > 366, 422, 'Choose a date range of 367 days or less.');
         $projectId = $page->account->project_id;
-        $accounts = SocialPage::query()->with('account')->where('provider', 'facebook')->where('status', 'active')
+        $accounts = SocialPage::query()->with('account')->where('status', 'active')
             ->whereHas('account', fn ($q) => $q->where('user_id', $request->user()->id)->where('project_id', $projectId)->where('status', 'active'))
-            ->where(fn ($q) => $q->where('provider', 'facebook')->when($platform === 'instagram', fn ($q) => $q->whereNotNull('instagram_business_id')))
+            ->where(function ($q) use ($platform) {
+                if ($platform === 'instagram') {
+                    $q->where(fn ($linked) => $linked->where('provider', 'facebook')->whereNotNull('instagram_business_id'))
+                        ->orWhere('provider', 'instagram');
+                } else {
+                    $q->where('provider', 'facebook');
+                }
+            })
             ->orderBy('page_name')->get();
         if ($request->filled('account_id')) {
             $selected = $accounts->firstWhere('id', $request->integer('account_id'));
@@ -131,24 +145,34 @@ class AnalyticsController extends Controller
         $previousSince = $previousUntil->copy()->subDays($days - 1);
         $data = null; $previous = null; $previousPublishedPostCount = null; $error = null;
         try {
-            $data = $analytics->dashboard($page, $platform, $since, $until);
-            $postCounts = $analytics->publishedPostCounts($page, $platform, $since, $until, $until, $timezone, data_get($data, 'account.media_count'));
-            $data['published_post_count'] = $postCounts['period'];
+            if ($page->provider === 'instagram') {
+                $data = $instagram->dashboard($page, $since, $until);
+                $data['published_post_count'] = ! empty($data['media_unavailable']) ? null : count($data['media'] ?? []);
+            } else {
+                $data = $analytics->dashboard($page, $platform, $since, $until);
+                $postCounts = $analytics->publishedPostCounts($page, $platform, $since, $until, $until, $timezone, data_get($data, 'account.media_count'));
+                $data['published_post_count'] = $postCounts['period'];
+            }
         } catch (Throwable $e) {
             $error = $e->getMessage();
         }
         if ($data) {
             try {
-                $previous = $analytics->dashboard($page, $platform, $previousSince->toDateString(), $previousUntil->toDateString());
-                $previousPublishedPostCount = $analytics->publishedPostCounts(
-                    $page,
-                    $platform,
-                    $previousSince->toDateString(),
-                    $previousUntil->toDateString(),
-                    $previousUntil->toDateString(),
-                    $timezone,
-                    data_get($previous, 'account.media_count'),
-                )['period'];
+                if ($page->provider === 'instagram') {
+                    $previous = $instagram->dashboard($page, $previousSince->toDateString(), $previousUntil->toDateString());
+                    $previousPublishedPostCount = ! empty($previous['media_unavailable']) ? null : count($previous['media'] ?? []);
+                } else {
+                    $previous = $analytics->dashboard($page, $platform, $previousSince->toDateString(), $previousUntil->toDateString());
+                    $previousPublishedPostCount = $analytics->publishedPostCounts(
+                        $page,
+                        $platform,
+                        $previousSince->toDateString(),
+                        $previousUntil->toDateString(),
+                        $previousUntil->toDateString(),
+                        $timezone,
+                        data_get($previous, 'account.media_count'),
+                    )['period'];
+                }
             } catch (Throwable) {
                 // Previous-period data is supplementary; the selected report remains usable.
             }
