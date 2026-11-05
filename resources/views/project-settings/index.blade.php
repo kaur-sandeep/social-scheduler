@@ -166,13 +166,13 @@
 
             ];
             $defaultRedirectUrls = [
-                'facebook'  => 'https://socialscheduler.cogniter.com/facebook/callback',
+                'facebook'  => 'https://social.cogniter.com/facebook/callback',
                 'instagram' => 'https://social.cogniter.com/instagram/callback',
-                'linkedin'  => 'https://socialscheduler.cogniter.com/linkedin/callback',
-                'tiktok'    => 'https://socialscheduler.cogniter.com/tiktok/callback',
-                'pinterest' => 'https://socialscheduler.cogniter.com/pinterest/callback',
-                'twitter'   => 'https://socialscheduler.cogniter.com/twitter/callback',
-                'youtube'   => 'https://socialscheduler.cogniter.com/youtube/callback',
+                'linkedin'  => 'https://social.cogniter.com/linkedin/callback',
+                'tiktok'    => 'https://social.cogniter.com/tiktok/callback',
+                'pinterest' => 'https://social.cogniter.com/pinterest/callback',
+                'twitter'   => 'https://social.cogniter.com/twitter/callback',
+                'youtube'   => 'https://social.cogniter.com/youtube/callback',
             ];
             @endphp
         @foreach(['facebook' => 'Facebook', 'instagram' => 'Instagram', 'linkedin' => 'LinkedIn', 'tiktok' => 'TikTok', 'pinterest' => 'Pinterest', 'twitter' => 'X (Twitter)', 'youtube' => 'YouTube'] as $key => $name) @php($credential = $credentials->get($key))
