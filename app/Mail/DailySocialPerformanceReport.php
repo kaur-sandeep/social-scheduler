@@ -36,7 +36,7 @@ class DailySocialPerformanceReport extends Mailable
                 if (is_array($value)) {
                     $value = $value === [] ? '0' : collect($value)->map(fn ($count, $type) => $type.': '.$count)->join(', ');
                 } elseif (\App\Support\ReportMetric::isNumericField($key)) {
-                    $value = $row['account_type'] === 'Instagram' && ! is_numeric($value) ? 'N/A' : \App\Support\ReportMetric::display($value);
+                    $value = \App\Support\ReportMetric::display($value);
                 } else {
                     $value ??= '';
                 }

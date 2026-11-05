@@ -42,14 +42,14 @@ class MetaAnalyticsService
         mixed $instagramMediaCount = null,
     ): array {
         $id = $platform === 'instagram' ? $page->instagram_business_id : $page->page_id;
-        $cacheKey = 'meta-published-counts-v2:'.hash('sha256', implode('|', [
+        $cacheKey = 'meta-published-counts-v3:'.hash('sha256', implode('|', [
             $page->id, $platform, $since, $until, $day, $id, $instagramMediaCount, hash('sha256', (string) $page->page_access_token),
         ]));
 
         try {
             return Cache::remember($cacheKey, now()->addMinutes(15), function () use ($page, $platform, $since, $until, $day, $timezone, $instagramMediaCount, $id) {
                 if (! $id || ! $page->page_access_token || $page->status !== 'active') {
-                    return ['total' => 0, 'day' => 0, 'period' => 0];
+                    return ['total' => 0, 'day' => 0, 'period' => 0, 'unavailable' => true];
                 }
 
                 if ($platform === 'facebook') {
@@ -77,7 +77,7 @@ class MetaAnalyticsService
                 'until' => $until,
                 'message' => $exception->getMessage(),
             ]);
-            return ['total' => 0, 'day' => 0, 'period' => 0];
+            return ['total' => 0, 'day' => 0, 'period' => 0, 'unavailable' => true];
         }
     }
 
@@ -198,7 +198,7 @@ class MetaAnalyticsService
 
     private function cachedDashboard(SocialPage $page, string $platform, string $since, string $until, bool $includeContentInsights, bool $includePostMetrics = false): array
     {
-        $cacheKey = 'meta-analytics-v6:'.hash('sha256', implode('|', [$page->id, $platform, $since, $until, $includeContentInsights ? 'full' : 'summary', $includePostMetrics ? 'post-metrics' : 'no-post-metrics', $page->page_access_token]));
+        $cacheKey = 'meta-analytics-v8:'.hash('sha256', implode('|', [$page->id, $platform, $since, $until, $includeContentInsights ? 'full' : 'summary', $includePostMetrics ? 'post-metrics' : 'no-post-metrics', $page->page_access_token]));
         return Cache::remember($cacheKey, now()->addMinutes(5), function () use ($page, $platform, $since, $until, $includeContentInsights, $includePostMetrics) {
             try {
                 return $this->fetchDashboard($page, $platform, $since, $until, $includeContentInsights, $includePostMetrics);
@@ -280,14 +280,18 @@ class MetaAnalyticsService
             ? [
                 ['views', 'day', $includeContentInsights ? 'total_value' : 'time_series'],
                 ['reach', 'day', 'time_series'],
+                ...($since !== $until ? [['reach', 'week', 'time_series', 'reach_week']] : []),
                 ...($includeContentInsights ? [['accounts_engaged', 'day', 'total_value'], ['follower_count', 'lifetime', 'total_value']] : []),
             ]
             : array_map(fn ($name) => [$name, 'day', null], $includeContentInsights
                 ? ['page_daily_follows', 'page_daily_unfollows', 'page_media_view', 'page_total_media_view_unique', 'page_post_engagements']
                 : ['page_daily_follows', 'page_daily_unfollows', 'page_media_view', 'page_total_media_view_unique']);
+        if (! $ig && $since !== $until) $metricQueries[] = ['page_total_media_view_unique', 'week', null, 'page_total_media_view_unique_week'];
         $insightRows = [];
         $unavailableInsights = [];
-        foreach ($metricQueries as [$metricName, $period, $metricType]) {
+        foreach ($metricQueries as $metricQuery) {
+            [$metricName, $period, $metricType] = $metricQuery;
+            $outputName = $metricQuery[3] ?? $metricName;
             $windows = $metricName === 'follower_count' ? [[null, null]] : $this->dateWindows($insightsSince, $until);
             $metricRow = null;
             foreach ($windows as [$windowSince, $windowUntil]) {
@@ -296,10 +300,11 @@ class MetaAnalyticsService
                 if ($metricType) $query['metric_type'] = $metricType;
                 $response = $this->get('/'.$id.'/insights', $query, true);
                 if ($response['_analytics_error'] ?? false) {
-                    $unavailableInsights[] = $metricName;
+                    $unavailableInsights[] = $outputName;
                     continue;
                 }
                 foreach ($this->normalizeInsights($response['data'] ?? [], $windowUntil ?? $until) as $row) {
+                    $row['name'] = $outputName;
                     $metricRow ??= $row;
                     $metricRow['values'] = array_merge($metricRow['values'] ?? [], $row['values'] ?? []);
                 }
@@ -332,14 +337,9 @@ class MetaAnalyticsService
         $fbFields = ($includeContentInsights || $includePostMetrics) ? 'id,message,status_type,created_time,permalink_url,full_picture,shares,comments.limit(0).summary(true),reactions.limit(0).summary(true)' : 'id,status_type,created_time';
         $mediaPath = '/'.$id.($ig ? '/media' : '/published_posts');
         $mediaQuery = ['fields' => $ig ? $igFields : $fbFields, 'since' => $mediaSince, 'until' => $mediaUntil, 'limit' => 100, 'access_token' => $token];
-        $mediaUnavailable = false;
-        if ($ig || $includePostMetrics) {
-            $collected = $this->collectPagedMedia($mediaPath, $mediaQuery);
-            $mediaUnavailable = $ig && $collected === null;
-            $mediaItems = $collected ?? [];
-        } else {
-            $mediaItems = $this->get($mediaPath, $mediaQuery)['data'] ?? [];
-        }
+        $collected = $this->collectPagedMedia($mediaPath, $mediaQuery);
+        $mediaUnavailable = $collected === null;
+        $mediaItems = $collected ?? [];
         $items = [];
         $mediaInsightsUnavailable = [];
         foreach ($mediaItems as $item) {

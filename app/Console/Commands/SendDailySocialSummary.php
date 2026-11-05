@@ -156,7 +156,7 @@ class SendDailySocialSummary extends Command
         $pages = SocialPage::query()->with(['account.project'])
             ->whereIn('provider', ['facebook', 'instagram'])->where('status', 'active')
             ->whereHas('account', fn ($query) => $query->where('status', 'active')->whereHas('project'))
-            ->orderBy('social_account_id')->orderBy('page_name')->get();
+            ->get();
 
         foreach ($pages as $page) {
             if ($page->provider === 'instagram') {
@@ -181,7 +181,8 @@ class SendDailySocialSummary extends Command
                             'message' => $exception->getMessage(),
                         ]);
                     }
-                    $row['metric_availability'] = (! empty($data['insights_unavailable']) || ! empty($data['media_unavailable']) || ! empty($data['media_insights_unavailable'])) ? 'Partial data' : 'Available';
+                    $row['metric_availability'] = (! empty($data['insights_unavailable']) || ! empty($data['media_unavailable']) || ! empty($data['media_insights_unavailable']) || ! empty($row['_published_counts_unavailable'])) ? 'Partial data' : 'Available';
+                    unset($row['_published_counts_unavailable']);
                 } catch (Throwable $exception) {
                     $row['account_error'] = true;
                     $row['metric_availability'] = 'Unavailable';
@@ -196,7 +197,8 @@ class SendDailySocialSummary extends Command
                 try {
                     $data = $analytics->dashboardForDailyReport($page, $platform, $since, $until);
                     $row = $this->applyAnalytics($row, $data, $analytics, $page, $platform, $since, $until, $postsSince, $postsUntil, $dayDate, $timezone);
-                    $row['metric_availability'] = ! empty($data['insights_unavailable']) || ($platform === 'instagram' && (! empty($data['media_unavailable']) || ! empty($data['media_insights_unavailable']))) ? 'Partial data' : 'Available';
+                    $row['metric_availability'] = ! empty($data['insights_unavailable']) || ! empty($data['media_unavailable']) || ! empty($data['media_insights_unavailable']) || ! empty($row['_published_counts_unavailable']) ? 'Partial data' : 'Available';
+                    unset($row['_published_counts_unavailable']);
                 } catch (Throwable $exception) {
                     $row['account_error'] = true;
                     $row['metric_availability'] = 'Unavailable';
@@ -209,6 +211,16 @@ class SendDailySocialSummary extends Command
             }
         }
 
+        $rows = collect($rows)->sort(function (array $left, array $right): int {
+            $brandOrder = ['Belize On Top' => 0, 'Wheels Belize' => 1, 'Tourist Point' => 2];
+            $leftBrand = $brandOrder[$this->brandForRow($left)] ?? 100;
+            $rightBrand = $brandOrder[$this->brandForRow($right)] ?? 100;
+            if ($leftBrand !== $rightBrand) return $leftBrand <=> $rightBrand;
+            $platformOrder = ['Facebook' => 0, 'Instagram' => 1];
+            $leftPlatform = $platformOrder[$left['account_type']] ?? 2;
+            $rightPlatform = $platformOrder[$right['account_type']] ?? 2;
+            return ($leftPlatform <=> $rightPlatform) ?: strcasecmp($left['account_name'], $right['account_name']);
+        })->values()->all();
         $columns = array_map(fn ($column) => str_replace('Yesterday', ucfirst($dayLabel), $column), self::COLUMNS);
         $report = [
             'report_date' => $reportDate,
@@ -219,17 +231,54 @@ class SendDailySocialSummary extends Command
             'column_keys' => self::COLUMN_KEYS,
             'highlights' => $this->highlights($rows, $dayLabel),
         ];
-        $report['summary'] = $summaryService->generate($columns, self::COLUMN_KEYS, $rows, $report['period_label']);
+
+        $report['brand_summaries'] = $this->brandSummaries($rows, $columns, self::COLUMN_KEYS, $report['period_label'], $summaryService);
 
         return $report;
     }
 
+    private function brandForRow(array $row): string
+    {
+        $identity = strtolower(preg_replace('/[^a-z0-9]/i', '', $row['account_name'] ?? ''));
+        foreach (['Belize On Top' => 'belizeontop', 'Wheels Belize' => 'wheelsbelize', 'Tourist Point' => 'touristpoint'] as $brand => $needle) {
+            if (str_contains($identity, $needle)) return $brand;
+        }
+        return $row['project'] ?? 'Other accounts';
+    }
+
+    private function brandSummaries(array $rows, array $columns, array $columnKeys, string $period, AnalyticsReportSummaryService $summaryService): array
+    {
+        $groups = collect($rows)->groupBy(fn (array $row) => $this->brandForRow($row));
+        $brandOrder = ['Belize On Top', 'Wheels Belize', 'Tourist Point'];
+        return $groups->sortBy(fn ($brandRows, $brand) => array_search($brand, $brandOrder, true) === false ? 100 : array_search($brand, $brandOrder, true))
+            ->map(fn ($brandRows, $brand) => [
+                'brand' => $brand,
+                'summary' => $summaryService->generate($columns, $columnKeys, $brandRows->values()->all(), $period),
+            ])->values()->all();
+    }
+
     private function emptyRow(SocialPage $page, string $platform): array
     {
+        $accountName = $page->page_name ?: 'Unknown account';
+        if ($platform === 'instagram') {
+            if ($page->provider === 'instagram') {
+                $username = $page->instagram_username ?: $page->page_name ?: '';
+                $normalizedUsername = strtolower(preg_replace('/[^a-z0-9]/i', '', $username));
+                $accountName = match ($normalizedUsername) {
+                    'belizeontop' => 'Belize On Top',
+                    'wheelsbelize' => 'Wheels Belize',
+                    'touristpoint' => 'Tourist Point',
+                    default => '@'.$username,
+                };
+            } else {
+                $accountName = $page->page_name ?: 'Unknown account';
+            }
+        }
+
         return [
             'project' => $page->account?->project?->name ?? 'Unknown project',
             'account_type' => ucfirst($platform),
-            'account_name' => $platform === 'instagram' ? '@'.($page->instagram_username ?: $page->page_name) : ($page->page_name ?: 'Unknown account'),
+            'account_name' => $accountName,
             'metric_availability' => 'Unavailable',
             'followers' => null, 'yesterday_net_change' => null, 'yesterday_follows' => null, 'yesterday_unfollows' => null,
             'total_posts' => null, 'yesterday_posts' => null, 'seven_day_posts' => null,
@@ -271,8 +320,10 @@ class SendDailySocialSummary extends Command
         $row['seven_day_views'] = $this->sumMetric($metricMap->get($viewsName), $postsSince, $postsUntil, $timezone);
         $row['yesterday_views'] = $this->dailyMetric($metricMap->get($viewsName), $day, $timezone);
         $row['yesterday_unique_views'] = $this->dailyMetric($metricMap->get($uniqueName), $day, $timezone);
-        // Daily unique audiences overlap across days. A seven-day unique total
-        // is not available from these daily metrics, so leave it unavailable.
+        // Use Meta's weekly aggregation for unique viewers; summing daily unique
+        // audiences would double-count people who viewed on multiple days.
+        $weeklyUniqueName = $platform === 'instagram' ? 'reach_week' : 'page_total_media_view_unique_week';
+        $row['seven_day_unique_views'] = $this->periodMetric($metricMap->get($weeklyUniqueName));
         $likesName = $platform === 'instagram' ? 'likes' : 'reactions';
         $row['yesterday_likes'] = $mediaUnavailable ? null : $sumPostMetric($todayItems, $likesName);
         $row['seven_day_likes'] = $mediaUnavailable ? null : $sumPostMetric($periodItems, $likesName);
@@ -305,6 +356,7 @@ class SendDailySocialSummary extends Command
         $row['total_posts'] = $preserveUnavailable($postCounts['total'] ?? null);
         $row['yesterday_posts'] = $preserveUnavailable($postCounts['day'] ?? null);
         $row['seven_day_posts'] = $preserveUnavailable($postCounts['period'] ?? null);
+        $row['_published_counts_unavailable'] = ! empty($postCounts['unavailable']);
         Log::info('Daily report published-post counts calculated.', [
             'project_id' => $page->account?->project_id,
             'social_account_id' => $page->social_account_id,
@@ -347,6 +399,16 @@ class SendDailySocialSummary extends Command
             if ($date >= $since && $date <= $until) $values[] = (float) $point['value'];
         }
         return $values === [] ? null : array_sum($values);
+    }
+
+    private function periodMetric(?array $metric): int|float|null
+    {
+        $values = collect($this->insightValues($metric))
+            ->filter(fn ($point) => is_numeric($point['value'] ?? null))
+            ->sortBy('end_time')
+            ->values();
+        if ($values->isEmpty()) return null;
+        return $values->last()['value'] + 0;
     }
 
     private function publishedDate(array $item, string $timezone): ?string

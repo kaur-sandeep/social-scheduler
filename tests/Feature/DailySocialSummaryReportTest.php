@@ -8,6 +8,7 @@ use App\Models\Project;
 use App\Models\SocialAccount;
 use App\Models\SocialPage;
 use App\Models\User;
+use App\Services\AnalyticsReportSummaryService;
 use App\Services\Social\MetaAnalyticsService;
 use App\Services\Social\InstagramLoginService;
 use Illuminate\Contracts\Cache\Lock as CacheLock;
@@ -22,6 +23,16 @@ use Tests\TestCase;
 class DailySocialSummaryReportTest extends TestCase
 {
     use RefreshDatabase;
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+        $summary = Mockery::mock(AnalyticsReportSummaryService::class);
+        $summary->shouldReceive('generate')->andReturnUsing(fn (array $columns, array $keys, array $rows) => collect($rows)
+            ->map(fn (array $row) => $row['account_name'].' ('.$row['account_type'].')')
+            ->join(' and ').' performance summary.');
+        $this->app->instance(AnalyticsReportSummaryService::class, $summary);
+    }
 
     public function test_report_sends_one_consolidated_email_with_csv_and_blocks_duplicates(): void
     {
@@ -53,6 +64,7 @@ class DailySocialSummaryReportTest extends TestCase
                     ['value' => 120, 'end_time' => '2026-10-31T12:00:00+0000'],
                 ]],
                 ['name' => 'page_total_media_view_unique', 'values' => [['value' => 150, 'end_time' => '2026-11-01T12:00:00+0000']]],
+                ['name' => 'page_total_media_view_unique_week', 'values' => [['value' => 180, 'end_time' => '2026-11-02T12:00:00+0000']]],
             ],
             'media' => [
                 ['type' => 'VIDEO', 'published_at' => '2026-11-01T10:00:00+0000', 'metrics' => ['reactions' => 0, 'comments' => 0, 'shares' => 1]],
@@ -64,13 +76,16 @@ class DailySocialSummaryReportTest extends TestCase
             'insights' => [
                 ['name' => 'views', 'values' => [['value' => 300, 'end_time' => '2026-11-01T12:00:00+0000']]],
                 ['name' => 'reach', 'values' => [['value' => 250, 'end_time' => '2026-11-01T12:00:00+0000']]],
+                ['name' => 'reach_week', 'values' => [['value' => 260, 'end_time' => '2026-11-02T12:00:00+0000']]],
             ],
             'media' => [['type' => 'REELS', 'published_at' => '2026-11-01T09:00:00+0000', 'metrics' => ['likes' => 0, 'comments' => 0, 'shares' => 0, 'saved' => 0]]],
         ];
         $analytics = Mockery::mock(MetaAnalyticsService::class);
         $analytics->shouldReceive('dashboardForDailyReport')->once()->withArgs(fn ($candidate, $platform, $since, $until) => $candidate->is($page) && $platform === 'facebook' && $since === '2026-10-27' && $until === '2026-11-02')->andReturn($facebook);
         $analytics->shouldReceive('dashboardForDailyReport')->once()->withArgs(fn ($candidate, $platform, $since, $until) => $candidate->is($page) && $platform === 'instagram' && $since === '2026-10-27' && $until === '2026-11-02')->andReturn($instagram);
-        $analytics->shouldReceive('publishedPostCounts')->twice()->andReturn(['total' => 1, 'day' => 1, 'period' => 1]);
+        $analytics->shouldReceive('publishedPostCounts')->twice()
+            ->withArgs(fn ($candidate, $platform, $since, $until) => $candidate->is($page) && in_array($platform, ['facebook', 'instagram'], true) && $since === '2026-10-27' && $until === '2026-11-02')
+            ->andReturn(['total' => 1, 'day' => 1, 'period' => 1]);
         $this->app->instance(MetaAnalyticsService::class, $analytics);
 
         Artisan::call('report:send-daily-social-summary', ['--date' => '2026-11-02']);
@@ -79,10 +94,13 @@ class DailySocialSummaryReportTest extends TestCase
         Mail::assertSent(DailySocialPerformanceReport::class, function (DailySocialPerformanceReport $mail): bool {
             $this->assertCount(2, $mail->report['rows']);
             $facebookRow = collect($mail->report['rows'])->firstWhere('account_type', 'Facebook');
+            $instagramRow = collect($mail->report['rows'])->firstWhere('account_type', 'Instagram');
             $this->assertSame(6.0, $facebookRow['yesterday_net_change'], json_encode($facebookRow));
             $this->assertSame(200, $facebookRow['yesterday_views']);
             $this->assertSame(370.0, $facebookRow['seven_day_views']);
             $this->assertSame(150, $facebookRow['yesterday_unique_views']);
+            $this->assertSame(180, $facebookRow['seven_day_unique_views']);
+            $this->assertSame(260, $instagramRow['seven_day_unique_views']);
             $this->assertSame(1, $facebookRow['yesterday_posts']);
             $this->assertSame(1, $facebookRow['total_posts']);
             $this->assertSame(1, $facebookRow['seven_day_posts']);
@@ -90,13 +108,17 @@ class DailySocialSummaryReportTest extends TestCase
             $this->assertSame(1.0, $facebookRow['yesterday_shares']);
             $this->assertSame(0.0, $facebookRow['seven_day_comments']);
             $csvRow = str_getcsv(explode("\n", trim($mail->csvContent()))[1]);
+            $this->assertSame('Sample Page', $csvRow[0]);
             $this->assertSame('Available', $csvRow[2]);
             $this->assertSame('1', $csvRow[7]);
             $this->assertSame('370', $csvRow[9]);
             $this->assertSame('0', $csvRow[14]);
             $this->assertStringContainsString('Oct 27, 2026 to Nov 2, 2026', $mail->report['period_label']);
             $this->assertStringContainsString('Last 7 Days Unique Views', $mail->render());
-            $this->assertStringContainsString('N/A', $mail->render());
+            $this->assertStringNotContainsString('N/A', $mail->render());
+            $this->assertSame(['Facebook', 'Instagram'], collect($mail->report['rows'])->pluck('account_type')->all());
+            $this->assertCount(1, $mail->report['brand_summaries']);
+            $this->assertStringContainsString('Sample Project', $mail->render());
             $this->assertStringNotContainsString('Net Follower Change', $mail->csvContent());
             $this->assertStringNotContainsString('Previous Period Comparison', $mail->csvContent());
             $this->assertStringNotContainsString('Published Content Types', $mail->csvContent());
@@ -127,6 +149,40 @@ class DailySocialSummaryReportTest extends TestCase
         $this->assertDatabaseMissing('daily_social_reports', ['report_date' => '2026-11-02']);
         Storage::disk('local')->assertExists('reports/previews/daily-social-performance-2026-11-02.csv');
         $this->assertStringContainsString('Preview Page', Storage::disk('local')->get('reports/previews/daily-social-performance-2026-11-02.csv'));
+    }
+
+    public function test_report_rows_follow_the_requested_brand_and_platform_order(): void
+    {
+        Mail::fake();
+        config(['social_reports.recipients' => ['manager@example.com'], 'social_reports.timezone' => 'Asia/Kolkata']);
+        $user = User::factory()->create();
+        $accounts = [];
+        foreach (['Tourist Point', 'Wheels Belize', 'Belize On Top'] as $brand) {
+            $project = Project::create(['user_id' => $user->id, 'name' => $brand]);
+            $account = SocialAccount::create(['user_id' => $user->id, 'project_id' => $project->id, 'provider' => 'facebook', 'provider_user_id' => 'user-'.$brand, 'user_access_token' => 'token']);
+            $page = SocialPage::create(['social_account_id' => $account->id, 'provider' => 'facebook', 'page_id' => 'page-'.$brand, 'page_name' => $brand, 'page_access_token' => 'page-token', 'instagram_business_id' => 'ig-'.$brand, 'instagram_username' => strtolower(str_replace(' ', '', $brand)), 'status' => 'active']);
+            $accounts[] = $page;
+        }
+
+        $analytics = Mockery::mock(MetaAnalyticsService::class);
+        $analytics->shouldReceive('dashboardForDailyReport')->times(6)->andReturn(['account' => ['followers_count' => 10, 'media_count' => 0], 'insights' => [], 'media' => []]);
+        $analytics->shouldReceive('publishedPostCounts')->times(6)->andReturn(['total' => 0, 'day' => 0, 'period' => 0]);
+        $this->app->instance(MetaAnalyticsService::class, $analytics);
+        $this->app->instance(InstagramLoginService::class, Mockery::mock(InstagramLoginService::class));
+
+        Artisan::call('report:send-daily-social-summary', ['--manual' => true, '--date' => '2026-11-04']);
+
+        Mail::assertSent(DailySocialPerformanceReport::class, function (DailySocialPerformanceReport $mail): bool {
+            $this->assertSame([
+                'Belize On Top|Facebook', 'Belize On Top|Instagram',
+                'Wheels Belize|Facebook', 'Wheels Belize|Instagram',
+                'Tourist Point|Facebook', 'Tourist Point|Instagram',
+            ], collect($mail->report['rows'])->map(fn ($row) => $row['account_name'].'|'.$row['account_type'])->all());
+            $rendered = $mail->render();
+            $this->assertLessThan(strpos($rendered, 'Wheels Belize'), strpos($rendered, 'Belize On Top'));
+            $this->assertLessThan(strpos($rendered, 'Tourist Point'), strpos($rendered, 'Wheels Belize'));
+            return true;
+        });
     }
 
     public function test_today_views_use_daily_page_insights_even_when_no_post_was_published_today(): void
@@ -172,7 +228,7 @@ class DailySocialSummaryReportTest extends TestCase
         ]);
         $page = SocialPage::create([
             'social_account_id' => $account->id, 'provider' => 'instagram', 'page_id' => 'ig-bollies',
-            'page_name' => 'bollies', 'page_access_token' => 'token', 'status' => 'active',
+            'page_name' => 'belizeontop', 'instagram_username' => 'belizeontop', 'page_access_token' => 'token', 'status' => 'active',
         ]);
         $analytics = Mockery::mock(MetaAnalyticsService::class);
         $this->app->instance(MetaAnalyticsService::class, $analytics);
@@ -192,15 +248,16 @@ class DailySocialSummaryReportTest extends TestCase
         Artisan::call('report:send-daily-social-summary', ['--manual' => true, '--date' => '2026-11-04']);
 
         Mail::assertSent(DailySocialPerformanceReport::class, function (DailySocialPerformanceReport $mail) use ($page): bool {
-            $row = collect($mail->report['rows'])->firstWhere('account_name', '@bollies');
+            $row = collect($mail->report['rows'])->firstWhere('account_name', 'Belize On Top');
             $this->assertNotNull($row);
             $this->assertSame('Available', $row['metric_availability']);
             $this->assertSame(625, $row['followers']);
             $this->assertSame(89.0, $row['seven_day_views']);
             $this->assertSame(1, $row['yesterday_posts']);
             $this->assertSame(21.0, $row['yesterday_likes']);
-            $this->assertStringContainsString('N/A', $mail->csvContent());
-            $this->assertStringContainsString('@bollies', $mail->render());
+            $this->assertStringNotContainsString('N/A', $mail->csvContent());
+            $this->assertStringContainsString('0', $mail->csvContent());
+            $this->assertStringContainsString('Belize On Top', $mail->render());
             return true;
         });
     }

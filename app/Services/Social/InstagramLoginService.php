@@ -128,7 +128,12 @@ class InstagramLoginService
         }
         $insights = [];
         $unavailable = [];
-        foreach ([['views', 'day', 'total_value'], ['reach', 'day', 'time_series'], ['follower_count', 'lifetime', 'total_value']] as [$metric, $period, $metricType]) {
+        $metricQueries = [['views', 'day', 'total_value'], ['reach', 'day', 'time_series']];
+        if ($since !== $until) $metricQueries[] = ['reach', 'week', 'time_series', 'reach_week'];
+        $metricQueries[] = ['follower_count', 'lifetime', 'total_value'];
+        foreach ($metricQueries as $metricQuery) {
+            [$metric, $period, $metricType] = $metricQuery;
+            $outputName = $metricQuery[3] ?? $metric;
             $params = ['metric' => $metric, 'period' => $period, 'metric_type' => $metricType, 'access_token' => $token];
             if ($metric !== 'follower_count') {
                 $params['since'] = Carbon::parse($since)->startOfDay()->timestamp;
@@ -140,12 +145,14 @@ class InstagramLoginService
                 foreach ($result['data'] ?? [] as $row) {
                     $value = data_get($row, 'total_value.value', data_get($row, 'values.0.value', $row['value'] ?? null));
                     if (($row['name'] ?? null) === $metric && is_numeric($value)) $found = true;
-                    $insights[] = $this->normalizeMetric($row, $until, $since === $until);
+                    $normalized = $this->normalizeMetric($row, $until, $since === $until);
+                    $normalized['name'] = $outputName;
+                    $insights[] = $normalized;
                 }
-                if (! $found) $unavailable[] = $metric;
+                if (! $found) $unavailable[] = $outputName;
             } catch (RuntimeException $exception) {
-                $unavailable[] = $metric;
-                Log::notice('Instagram Login insight is unavailable for the connected account.', ['social_page_id' => $page->id, 'metric' => $metric, 'message' => $exception->getMessage()]);
+                $unavailable[] = $outputName;
+                Log::notice('Instagram Login insight is unavailable for the connected account.', ['social_page_id' => $page->id, 'metric' => $outputName, 'message' => $exception->getMessage()]);
             }
         }
 
