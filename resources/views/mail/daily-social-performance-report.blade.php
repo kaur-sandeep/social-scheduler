@@ -12,9 +12,19 @@
             </table>
         </div>
         <h2 style="font-size:18px;margin:24px 0 8px">Performance summary</h2>
+        <p style="margin:0 0 12px;color:#68778b;font-size:12px">Current period: {{ $report['current_period']['label'] }} &nbsp;|&nbsp; Previous period: {{ $report['previous_period']['label'] }}</p>
         @foreach($report['brand_summaries'] as $brandSummary)
             <h3 style="font-size:15px;margin:16px 0 5px">{{ $brandSummary['brand'] }}</h3>
-            <p style="margin:0 0 12px;color:#35465e;line-height:1.55">{{ $brandSummary['summary'] }}</p>
+            @foreach($brandSummary['accounts'] as $account)
+                @php($comparison=$account['comparison']??null)
+                @if(!empty($comparison['points']))
+                    <ul style="margin:0;padding-left:22px;color:#35465e;line-height:1.6">
+                        @foreach($comparison['points'] as $point)
+                            <li style="padding:1px 0">{{ $point }}</li>
+                        @endforeach
+                    </ul>
+                @endif
+            @endforeach
         @endforeach
         <p style="margin:20px 0 0;color:#35465e;line-height:1.55">Regards,<br>Team Cogniter</p>
     </main>

@@ -151,6 +151,8 @@ class SendDailySocialSummary extends Command
         // totals for both manual and scheduled sends.
         $since = $postsSince;
         $until = $postsUntil;
+        $previousSince = $date->copy()->subDays(13)->toDateString();
+        $previousUntil = $date->copy()->subDays(7)->toDateString();
         $rows = [];
 
         $pages = SocialPage::query()->with(['account.project'])
@@ -164,6 +166,13 @@ class SendDailySocialSummary extends Command
                 try {
                     $data = $instagram->dashboardForDailyReport($page, $since, $until);
                     $row = $this->applyAnalytics($row, $data, $analytics, $page, 'instagram', $since, $until, $postsSince, $postsUntil, $dayDate, $timezone);
+                    try {
+                        $previousData = $instagram->dashboardForDailyReport($page, $previousSince, $previousUntil);
+                        $row['comparison'] = $this->comparison($row, $data, $previousData, 'instagram', $since, $until, $previousSince, $previousUntil, $timezone, null);
+                    } catch (Throwable $exception) {
+                        $row['comparison'] = $this->unavailableComparison($row);
+                        Log::notice('Previous-period Instagram metrics unavailable.', ['social_page_id' => $page->id, 'message' => $exception->getMessage()]);
+                    }
                     try {
                         // Instagram returns views as a single total for a multi-day
                         // request. Fetch the report day separately so its value is
@@ -197,6 +206,13 @@ class SendDailySocialSummary extends Command
                 try {
                     $data = $analytics->dashboardForDailyReport($page, $platform, $since, $until);
                     $row = $this->applyAnalytics($row, $data, $analytics, $page, $platform, $since, $until, $postsSince, $postsUntil, $dayDate, $timezone);
+                    try {
+                        $previousData = $analytics->dashboardForDailyReport($page, $platform, $previousSince, $previousUntil);
+                        $row['comparison'] = $this->comparison($row, $data, $previousData, $platform, $since, $until, $previousSince, $previousUntil, $timezone, $analytics->publishedPostCounts($page, $platform, $previousSince, $previousUntil, $previousUntil, $timezone, data_get($previousData, 'account.media_count')));
+                    } catch (Throwable $exception) {
+                        $row['comparison'] = $this->unavailableComparison($row);
+                        Log::notice('Previous-period Meta metrics unavailable.', ['social_page_id' => $page->id, 'platform' => $platform, 'message' => $exception->getMessage()]);
+                    }
                     $row['metric_availability'] = ! empty($data['insights_unavailable']) || ! empty($data['media_unavailable']) || ! empty($data['media_insights_unavailable']) || ! empty($row['_published_counts_unavailable']) ? 'Partial data' : 'Available';
                     unset($row['_published_counts_unavailable']);
                 } catch (Throwable $exception) {
@@ -226,13 +242,15 @@ class SendDailySocialSummary extends Command
             'report_date' => $reportDate,
             'generated_at' => now($timezone)->format('M j, Y g:i A T'),
             'period_label' => Carbon::parse($postsSince, $timezone)->format('M j, Y').' to '.Carbon::parse($postsUntil, $timezone)->format('M j, Y').' (last 7 calendar days, including today; '.$dayLabel.': '.$day->format('M j, Y').')',
+            'current_period' => ['since' => $postsSince, 'until' => $postsUntil, 'label' => Carbon::parse($postsSince, $timezone)->format('M j').'–'.Carbon::parse($postsUntil, $timezone)->format('M j, Y')],
+            'previous_period' => ['since' => $previousSince, 'until' => $previousUntil, 'label' => Carbon::parse($previousSince, $timezone)->format('M j').'–'.Carbon::parse($previousUntil, $timezone)->format('M j, Y')],
             'rows' => $rows,
             'columns' => $columns,
             'column_keys' => self::COLUMN_KEYS,
             'highlights' => $this->highlights($rows, $dayLabel),
         ];
 
-        $report['brand_summaries'] = $this->brandSummaries($rows, $columns, self::COLUMN_KEYS, $report['period_label'], $summaryService);
+        $report['brand_summaries'] = collect($rows)->groupBy('account_name')->map(fn ($accountRows, $accountName) => ['brand' => $accountName, 'accounts' => $accountRows->values()->all()])->values()->all();
 
         return $report;
     }
@@ -255,6 +273,135 @@ class SendDailySocialSummary extends Command
                 'brand' => $brand,
                 'summary' => $summaryService->generate($columns, $columnKeys, $brandRows->values()->all(), $period),
             ])->values()->all();
+    }
+
+    private function unavailableComparison(array $row): array
+    {
+        return ['metrics' => [], 'available' => false, 'current' => [], 'previous' => [], 'points' => [], 'overall' => null];
+    }
+
+    private function comparison(array $currentRow, array $currentData, array $previousData, string $platform, string $currentSince, string $currentUntil, string $since, string $until, string $timezone, ?array $previousPosts): array
+    {
+        $insights = collect($previousData['insights'] ?? [])->keyBy('name');
+        $media = collect($previousData['media'] ?? [])->filter(function ($item) use ($since, $until, $timezone) {
+            $date = $this->publishedDate($item, $timezone);
+            return $date !== null && $date >= $since && $date <= $until;
+        });
+        $viewsName = $platform === 'instagram' ? 'views' : 'page_media_view';
+        $reachName = $platform === 'instagram' ? 'reach_week' : 'page_total_media_view_unique_week';
+        $likesName = $platform === 'instagram' ? 'likes' : 'reactions';
+        $sumMedia = fn (string $name) => $media->isNotEmpty() && $media->contains(fn ($item) => ! is_numeric(data_get($item, 'metrics.'.$name)))
+            ? null : ($media->isEmpty() && ! empty($previousData['media_unavailable']) ? null : $media->sum(fn ($item) => (float) data_get($item, 'metrics.'.$name, 0)));
+        $previous = [
+            'followers' => null, // No historical follower snapshots are stored.
+            'follows' => $platform === 'facebook' ? $this->sumMetric($insights->get('page_daily_follows'), $since, $until, $timezone) : null,
+            'unfollows' => $platform === 'facebook' ? $this->sumMetric($insights->get('page_daily_unfollows'), $since, $until, $timezone) : null,
+            'net_growth' => null,
+            'posts' => $previousPosts['period'] ?? ($platform === 'instagram' && empty($previousData['media_unavailable']) ? $media->count() : null),
+            'views' => $this->sumMetric($insights->get($viewsName), $since, $until, $timezone),
+            'reach' => $this->periodMetric($insights->get($reachName)),
+            'likes' => empty($previousData['media_unavailable']) ? $sumMedia($likesName) : null,
+            'comments' => empty($previousData['media_unavailable']) ? $sumMedia('comments') : null,
+            'shares' => empty($previousData['media_unavailable']) ? $sumMedia('shares') : null,
+            'saves' => $platform === 'instagram' && empty($previousData['media_unavailable']) ? $sumMedia('saved') : null,
+        ];
+        if (is_numeric($previous['follows']) && is_numeric($previous['unfollows'])) $previous['net_growth'] = $previous['follows'] - $previous['unfollows'];
+        $currentInsights = collect($currentData['insights'] ?? [])->keyBy('name');
+        $currentFollows = $platform === 'facebook' ? $this->sumMetric($currentInsights->get('page_daily_follows'), $currentSince, $currentUntil, $timezone) : null;
+        $currentUnfollows = $platform === 'facebook' ? $this->sumMetric($currentInsights->get('page_daily_unfollows'), $currentSince, $currentUntil, $timezone) : null;
+        $current = [
+            'followers' => $currentRow['followers'], 'follows' => $currentFollows,
+            'unfollows' => $currentUnfollows, 'net_growth' => is_numeric($currentFollows) && is_numeric($currentUnfollows) ? $currentFollows - $currentUnfollows : null, 'posts' => $currentRow['seven_day_posts'],
+            'views' => $currentRow['seven_day_views'], 'reach' => $currentRow['seven_day_unique_views'],
+            'likes' => $currentRow['seven_day_likes'], 'comments' => $currentRow['seven_day_comments'],
+            'shares' => $currentRow['seven_day_shares'], 'saves' => $currentRow['seven_day_saves'],
+        ];
+        $labels = ['followers' => 'Total Followers', 'follows' => 'New Follows', 'unfollows' => 'Unfollows', 'net_growth' => 'Net Growth', 'posts' => 'Published Posts', 'views' => 'Total Views', 'reach' => 'Unique Views / Reach', 'likes' => 'Likes / Reactions', 'comments' => 'Comments', 'shares' => 'Shares', 'saves' => 'Saves'];
+        $metrics = [];
+        foreach ($labels as $key => $label) {
+            $a = $previous[$key]; $b = $current[$key];
+            $delta = is_numeric($a) && is_numeric($b) ? (float) $b - (float) $a : null;
+            $pct = $delta !== null && (float) $a !== 0.0 ? $delta / abs((float) $a) * 100 : null;
+            $state = $delta === null ? 'unavailable' : ($delta > 0 ? 'up' : ($delta < 0 ? 'down' : 'same'));
+            $impact = $key === 'unfollows' ? match ($state) { 'up' => 'down', 'down' => 'up', default => $state } : $state;
+            $metrics[] = compact('key', 'label', 'a', 'b', 'delta', 'pct', 'state', 'impact');
+        }
+        $usable = collect($metrics)->whereIn('key', ['follows', 'net_growth', 'views', 'reach', 'likes', 'comments', 'shares', 'saves', 'posts'])->filter(fn ($metric) => ! in_array($metric['state'], ['unavailable', 'same'], true));
+        $categories = [
+            'follower growth' => ['follows', 'unfollows', 'net_growth'],
+            'engagement' => ['likes', 'comments', 'shares', 'saves'],
+            'visibility' => ['views', 'reach'],
+            'publishing activity' => ['posts'],
+        ];
+        $categoryOutcomes = collect($categories)->map(function (array $keys, string $name) use ($usable) {
+            $metricsForCategory = $usable->whereIn('key', $keys);
+            $up = $metricsForCategory->where('impact', 'up')->isNotEmpty();
+            $down = $metricsForCategory->where('impact', 'down')->isNotEmpty();
+            return $up && $down ? 'mixed' : ($up ? 'up' : ($down ? 'down' : null));
+        })->filter();
+        $improvedAreas = $categoryOutcomes->filter(fn ($outcome) => $outcome === 'up')->keys()->all();
+        $declinedAreas = $categoryOutcomes->filter(fn ($outcome) => $outcome === 'down')->keys()->all();
+        $mixedAreas = $categoryOutcomes->filter(fn ($outcome) => $outcome === 'mixed')->keys()->all();
+        $overall = null;
+        if ($improvedAreas !== [] && $declinedAreas !== []) {
+            $overall = 'Overall, results were mixed: '.implode(' and ', $improvedAreas).' improved, while '.implode(' and ', $declinedAreas).' declined.';
+        } elseif ($improvedAreas !== []) {
+            $overall = 'Overall, performance improved, led by gains in '.implode(' and ', $improvedAreas).'.';
+        } elseif ($declinedAreas !== []) {
+            $overall = 'Overall, performance softened, with declines in '.implode(' and ', $declinedAreas).'.';
+        } elseif ($mixedAreas !== []) {
+            $overall = 'Overall, results were mixed across '.implode(' and ', $mixedAreas).'.';
+        }
+        $byKey = collect($metrics)->keyBy('key');
+        $formatAvailable = function (array $keys) use ($byKey): array {
+            return collect($keys)->map(fn ($key) => $byKey->get($key))
+                ->filter(fn ($metric) => $metric && ! in_array($metric['state'], ['unavailable', 'same'], true))
+                ->map(fn ($metric) => $this->comparisonMetricText($metric))->values()->all();
+        };
+        $points = [];
+        $followerPoints = $formatAvailable(['follows', 'unfollows', 'net_growth']);
+        $platformPrefix = ucfirst($platform).' — ';
+        if ($followerPoints !== []) $points[] = $platformPrefix.'Follower growth: '.implode('; ', $followerPoints).'.';
+        $engagementPoints = $formatAvailable(['likes', 'comments', 'shares', 'saves']);
+        if ($engagementPoints !== []) $points[] = $platformPrefix.'Engagement: '.implode('; ', $engagementPoints).'.';
+        $visibilityPoints = $formatAvailable(['views', 'reach']);
+        if ($visibilityPoints !== []) $points[] = $platformPrefix.'Visibility: '.implode('; ', $visibilityPoints).'.';
+        $publishingPoints = $formatAvailable(['posts']);
+        if ($publishingPoints !== []) $points[] = $platformPrefix.'Publishing activity: '.implode('; ', $publishingPoints).'.';
+        if ($overall !== null) $points[] = $platformPrefix.'Overall performance: '.$overall;
+        return ['available' => true, 'current' => $current, 'previous' => $previous, 'metrics' => $metrics, 'points' => $points, 'overall' => $overall];
+    }
+
+    private function comparisonMetricText(?array $metric): string
+    {
+        if (! $metric || $metric['state'] === 'unavailable') return '';
+        $number = fn ($value) => number_format((float) $value, (float) $value === floor((float) $value) ? 0 : 1);
+        $previous = (float) $metric['a']; $current = (float) $metric['b']; $delta = (float) $metric['delta'];
+        $name = match ($metric['key']) {
+            'follows' => 'New follows', 'unfollows' => 'Unfollows', 'net_growth' => 'Net follower growth',
+            'posts' => 'Published posts', 'views' => 'Views', 'reach' => 'Unique views / reach',
+            'likes' => 'Likes / reactions', 'comments' => 'Comments', 'shares' => 'Shares', 'saves' => 'Saves',
+            default => $metric['label'],
+        };
+        if ($metric['key'] === 'unfollows') {
+            $word = $delta < 0 ? 'fell' : 'rose';
+            $change = $metric['pct'] !== null ? ' ('.number_format(abs($metric['pct']), 1).'% '.($delta < 0 ? 'fewer' : 'more').')' : '';
+            return $name.' '.$word.' from '.$number($previous).' to '.$number($current).$change;
+        }
+        if ($metric['key'] === 'net_growth') {
+            $direction = $delta > 0 ? 'improved' : 'declined';
+            $signedDelta = ($delta > 0 ? '+' : '−').$number(abs($delta));
+            return $name.' '.$direction.' from '.$number($previous).' to '.($current > 0 ? '+' : '').$number($current).' (change '.$signedDelta.')';
+        }
+        if ($previous == 0 && $current > 0) {
+            return $name.' rose from 0 to '.$number($current).' (a new gain)';
+        }
+        if ($previous > 0 && $current == 0) {
+            return $name.' fell from '.$number($previous).' to 0 (down 100%)';
+        }
+        $verb = $delta > 0 ? 'increased' : 'declined';
+        $percent = $metric['pct'] !== null ? ' by '.number_format(abs($metric['pct']), 1).'%' : ' by '.$number(abs($delta));
+        return $name.' '.$verb.$percent.' ('.$number($previous).' to '.$number($current).')';
     }
 
     private function emptyRow(SocialPage $page, string $platform): array

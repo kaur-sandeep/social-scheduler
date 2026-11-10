@@ -83,8 +83,13 @@ class DailySocialSummaryReportTest extends TestCase
         $analytics = Mockery::mock(MetaAnalyticsService::class);
         $analytics->shouldReceive('dashboardForDailyReport')->once()->withArgs(fn ($candidate, $platform, $since, $until) => $candidate->is($page) && $platform === 'facebook' && $since === '2026-10-27' && $until === '2026-11-02')->andReturn($facebook);
         $analytics->shouldReceive('dashboardForDailyReport')->once()->withArgs(fn ($candidate, $platform, $since, $until) => $candidate->is($page) && $platform === 'instagram' && $since === '2026-10-27' && $until === '2026-11-02')->andReturn($instagram);
+        $analytics->shouldReceive('dashboardForDailyReport')->once()->withArgs(fn ($candidate, $platform, $since, $until) => $candidate->is($page) && $platform === 'facebook' && $since === '2026-10-20' && $until === '2026-10-26')->andReturn($facebook);
+        $analytics->shouldReceive('dashboardForDailyReport')->once()->withArgs(fn ($candidate, $platform, $since, $until) => $candidate->is($page) && $platform === 'instagram' && $since === '2026-10-20' && $until === '2026-10-26')->andReturn($instagram);
         $analytics->shouldReceive('publishedPostCounts')->twice()
             ->withArgs(fn ($candidate, $platform, $since, $until) => $candidate->is($page) && in_array($platform, ['facebook', 'instagram'], true) && $since === '2026-10-27' && $until === '2026-11-02')
+            ->andReturn(['total' => 1, 'day' => 1, 'period' => 1]);
+        $analytics->shouldReceive('publishedPostCounts')->twice()
+            ->withArgs(fn ($candidate, $platform, $since, $until) => $candidate->is($page) && in_array($platform, ['facebook', 'instagram'], true) && $since === '2026-10-20' && $until === '2026-10-26')
             ->andReturn(['total' => 1, 'day' => 1, 'period' => 1]);
         $this->app->instance(MetaAnalyticsService::class, $analytics);
 
@@ -96,6 +101,14 @@ class DailySocialSummaryReportTest extends TestCase
             $facebookRow = collect($mail->report['rows'])->firstWhere('account_type', 'Facebook');
             $instagramRow = collect($mail->report['rows'])->firstWhere('account_type', 'Instagram');
             $this->assertSame(6.0, $facebookRow['yesterday_net_change'], json_encode($facebookRow));
+            $this->assertSame('2026-10-27', $mail->report['current_period']['since']);
+            $this->assertSame('2026-11-02', $mail->report['current_period']['until']);
+            $this->assertSame('2026-10-20', $mail->report['previous_period']['since']);
+            $this->assertSame('2026-10-26', $mail->report['previous_period']['until']);
+            $this->assertSame(12.0, $facebookRow['comparison']['current']['follows']);
+            $this->assertSame(3.0, $facebookRow['comparison']['current']['unfollows']);
+            $this->assertNull($facebookRow['comparison']['previous']['followers']);
+            $this->assertStringNotContainsString('historical data unavailable', strtolower($mail->render()));
             $this->assertSame(200, $facebookRow['yesterday_views']);
             $this->assertSame(370.0, $facebookRow['seven_day_views']);
             $this->assertSame(150, $facebookRow['yesterday_unique_views']);
@@ -121,7 +134,7 @@ class DailySocialSummaryReportTest extends TestCase
             $this->assertStringNotContainsString('N/A', $mail->render());
             $this->assertSame(['Facebook', 'Instagram'], collect($mail->report['rows'])->pluck('account_type')->all());
             $this->assertCount(1, $mail->report['brand_summaries']);
-            $this->assertStringContainsString('Sample Project', $mail->render());
+            $this->assertStringContainsString('Sample Page', $mail->render());
             $this->assertStringNotContainsString('Net Follower Change', $mail->csvContent());
             $this->assertStringNotContainsString('Previous Period Comparison', $mail->csvContent());
             $this->assertStringNotContainsString('Published Content Types', $mail->csvContent());
@@ -140,9 +153,9 @@ class DailySocialSummaryReportTest extends TestCase
         $account = SocialAccount::create(['user_id' => $user->id, 'project_id' => $project->id, 'provider' => 'facebook', 'provider_user_id' => 'preview-user', 'user_access_token' => 'token']);
         $page = SocialPage::create(['social_account_id' => $account->id, 'provider' => 'facebook', 'page_id' => 'preview-page', 'page_name' => 'Preview Page', 'page_access_token' => 'page-token', 'status' => 'active']);
         $analytics = Mockery::mock(MetaAnalyticsService::class);
-        $analytics->shouldReceive('dashboardForDailyReport')->once()->withArgs(fn ($candidate, $platform) => $candidate->is($page) && $platform === 'facebook')
+        $analytics->shouldReceive('dashboardForDailyReport')->twice()->withArgs(fn ($candidate, $platform) => $candidate->is($page) && $platform === 'facebook')
             ->andReturn(['account' => ['followers_count' => 42], 'insights' => [], 'media' => []]);
-        $analytics->shouldReceive('publishedPostCounts')->once()->andReturn(['total' => 0, 'day' => 0, 'period' => 0]);
+        $analytics->shouldReceive('publishedPostCounts')->twice()->andReturn(['total' => 0, 'day' => 0, 'period' => 0]);
         $this->app->instance(MetaAnalyticsService::class, $analytics);
 
         $exitCode = Artisan::call('report:send-daily-social-summary', ['--preview' => true, '--date' => '2026-11-02']);
@@ -168,8 +181,8 @@ class DailySocialSummaryReportTest extends TestCase
         }
 
         $analytics = Mockery::mock(MetaAnalyticsService::class);
-        $analytics->shouldReceive('dashboardForDailyReport')->times(6)->andReturn(['account' => ['followers_count' => 10, 'media_count' => 0], 'insights' => [], 'media' => []]);
-        $analytics->shouldReceive('publishedPostCounts')->times(6)->andReturn(['total' => 0, 'day' => 0, 'period' => 0]);
+        $analytics->shouldReceive('dashboardForDailyReport')->times(12)->andReturn(['account' => ['followers_count' => 10, 'media_count' => 0], 'insights' => [], 'media' => []]);
+        $analytics->shouldReceive('publishedPostCounts')->times(12)->andReturn(['total' => 0, 'day' => 0, 'period' => 0]);
         $this->app->instance(MetaAnalyticsService::class, $analytics);
         $this->app->instance(InstagramLoginService::class, Mockery::mock(InstagramLoginService::class));
 
@@ -197,7 +210,7 @@ class DailySocialSummaryReportTest extends TestCase
         $account = SocialAccount::create(['user_id' => $user->id, 'project_id' => $project->id, 'provider' => 'facebook', 'provider_user_id' => 'today-user', 'user_access_token' => 'token']);
         $page = SocialPage::create(['social_account_id' => $account->id, 'provider' => 'facebook', 'page_id' => 'today-page', 'page_name' => 'Today Page', 'page_access_token' => 'page-token', 'status' => 'active']);
         $analytics = Mockery::mock(MetaAnalyticsService::class);
-        $analytics->shouldReceive('dashboardForDailyReport')->once()->andReturn([
+        $analytics->shouldReceive('dashboardForDailyReport')->twice()->andReturn([
             'account' => ['followers_count' => 124],
             'insights' => [
                 ['name' => 'page_media_view', 'values' => [['value' => 30, 'end_time' => '2026-11-03T12:00:00+0000'], ['value' => 54, 'end_time' => '2026-11-04T12:00:00+0000']]],
@@ -205,7 +218,7 @@ class DailySocialSummaryReportTest extends TestCase
             ],
             'media' => [],
         ]);
-        $analytics->shouldReceive('publishedPostCounts')->once()->andReturn(['total' => 3, 'day' => 0, 'period' => 3]);
+        $analytics->shouldReceive('publishedPostCounts')->twice()->andReturn(['total' => 3, 'day' => 0, 'period' => 3]);
         $this->app->instance(MetaAnalyticsService::class, $analytics);
 
         Artisan::call('report:send-daily-social-summary', ['--manual' => true, '--date' => '2026-11-04']);
@@ -236,7 +249,7 @@ class DailySocialSummaryReportTest extends TestCase
         $analytics = Mockery::mock(MetaAnalyticsService::class);
         $this->app->instance(MetaAnalyticsService::class, $analytics);
         $instagram = Mockery::mock(InstagramLoginService::class);
-        $instagram->shouldReceive('dashboardForDailyReport')->twice()->withArgs(fn ($candidate) => $candidate->is($page))->andReturn([
+        $instagram->shouldReceive('dashboardForDailyReport')->times(3)->withArgs(fn ($candidate) => $candidate->is($page))->andReturn([
             'account' => ['followers_count' => 625, 'media_count' => 14],
             'insights' => [['name' => 'views', 'values' => [['value' => 89, 'end_time' => '2026-11-04T00:00:00+0000']]]],
             'media' => [['id' => 'media-bollies', 'published_at' => '2026-11-04T11:00:00+0530', 'metrics' => ['likes' => 21, 'comments' => 3, 'saved' => 2, 'shares' => 1]]],
@@ -278,8 +291,8 @@ class DailySocialSummaryReportTest extends TestCase
         $account = SocialAccount::create(['user_id' => $user->id, 'project_id' => $project->id, 'provider' => 'facebook', 'provider_user_id' => 'manual-user', 'user_access_token' => 'token']);
         $page = SocialPage::create(['social_account_id' => $account->id, 'provider' => 'facebook', 'page_id' => 'manual-page', 'page_name' => 'Manual Page', 'page_access_token' => 'page-token', 'status' => 'active']);
         $analytics = Mockery::mock(MetaAnalyticsService::class);
-        $analytics->shouldReceive('dashboardForDailyReport')->once()->andReturn(['account' => [], 'insights' => [], 'media' => []]);
-        $analytics->shouldReceive('publishedPostCounts')->once()->andReturn(['total' => 0, 'day' => 0, 'period' => 0]);
+        $analytics->shouldReceive('dashboardForDailyReport')->twice()->andReturn(['account' => [], 'insights' => [], 'media' => []]);
+        $analytics->shouldReceive('publishedPostCounts')->twice()->andReturn(['total' => 0, 'day' => 0, 'period' => 0]);
         $this->app->instance(MetaAnalyticsService::class, $analytics);
 
         $response = $this->actingAs($user)->postJson(route('analytics.send-test-report'));
@@ -307,8 +320,8 @@ class DailySocialSummaryReportTest extends TestCase
         $account = SocialAccount::create(['user_id' => $user->id, 'project_id' => $project->id, 'provider' => 'facebook', 'provider_user_id' => 'failed-user', 'user_access_token' => 'token']);
         SocialPage::create(['social_account_id' => $account->id, 'provider' => 'facebook', 'page_id' => 'failed-page', 'page_name' => 'Failed Page', 'page_access_token' => 'page-token', 'status' => 'active']);
         $analytics = Mockery::mock(MetaAnalyticsService::class);
-        $analytics->shouldReceive('dashboardForDailyReport')->once()->andReturn(['account' => [], 'insights' => [], 'media' => []]);
-        $analytics->shouldReceive('publishedPostCounts')->once()->andReturn(['total' => 0, 'day' => 0, 'period' => 0]);
+        $analytics->shouldReceive('dashboardForDailyReport')->twice()->andReturn(['account' => [], 'insights' => [], 'media' => []]);
+        $analytics->shouldReceive('publishedPostCounts')->twice()->andReturn(['total' => 0, 'day' => 0, 'period' => 0]);
         $this->app->instance(MetaAnalyticsService::class, $analytics);
 
         $pendingMail = Mockery::mock();
