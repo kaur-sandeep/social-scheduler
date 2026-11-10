@@ -109,10 +109,13 @@ class DailySocialSummaryReportTest extends TestCase
             $this->assertSame(0.0, $facebookRow['seven_day_comments']);
             $csvRow = str_getcsv(explode("\n", trim($mail->csvContent()))[1]);
             $this->assertSame('Sample Page', $csvRow[0]);
-            $this->assertSame('Available', $csvRow[2]);
-            $this->assertSame('1', $csvRow[7]);
-            $this->assertSame('370', $csvRow[9]);
-            $this->assertSame('0', $csvRow[14]);
+            $this->assertSame('1', $csvRow[5]);
+            $this->assertSame('370', $csvRow[7]);
+            $this->assertSame('0', $csvRow[12]);
+            $this->assertStringNotContainsString('Metric Availability', $mail->csvContent());
+            $this->assertStringNotContainsString('Unfollows', $mail->csvContent());
+            $this->assertStringNotContainsString('Project and account performance', $mail->render());
+            $this->assertStringContainsString('Please find the social media report below.', $mail->render());
             $this->assertStringContainsString('Oct 27, 2026 to Nov 2, 2026', $mail->report['period_label']);
             $this->assertStringContainsString('Last 7 Days Unique Views', $mail->render());
             $this->assertStringNotContainsString('N/A', $mail->render());

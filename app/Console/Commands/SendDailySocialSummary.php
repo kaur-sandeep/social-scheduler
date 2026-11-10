@@ -23,8 +23,8 @@ class SendDailySocialSummary extends Command
     protected $description = 'Email one consolidated daily Facebook and Instagram performance report';
 
     private const COLUMNS = [
-        'Account Name', 'Account Type', 'Metric Availability', 'Total Followers',
-        'Yesterday Follows', 'Yesterday Unfollows',
+        'Account Name', 'Account Type', 'Total Followers',
+        'Yesterday Follows',
         'Yesterday Published Posts', 'Last 7 Days Published Posts',
         'Yesterday Views', 'Last 7 Days Views',
         'Yesterday Unique Views', 'Last 7 Days Unique Views',
@@ -35,8 +35,8 @@ class SendDailySocialSummary extends Command
     ];
 
     private const COLUMN_KEYS = [
-        'account_name', 'account_type', 'metric_availability', 'followers', 'yesterday_follows',
-        'yesterday_unfollows', 'yesterday_posts', 'seven_day_posts',
+        'account_name', 'account_type', 'followers', 'yesterday_follows',
+        'yesterday_posts', 'seven_day_posts',
         'yesterday_views', 'seven_day_views', 'yesterday_unique_views', 'seven_day_unique_views',
         'yesterday_likes', 'seven_day_likes', 'yesterday_comments', 'seven_day_comments',
         'yesterday_shares', 'seven_day_shares', 'yesterday_saves', 'seven_day_saves',

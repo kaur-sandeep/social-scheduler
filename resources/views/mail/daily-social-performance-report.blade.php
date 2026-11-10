@@ -4,8 +4,7 @@
 <body style="margin:0;background:#fff;font-family:Arial,Helvetica,sans-serif;color:#17243a">
 <div style="width:100%;margin:0;padding:0">
     <main style="background:transparent;padding:0;border:0;border-radius:0">
-        <p style="margin:0 0 18px;color:#35465e;line-height:1.55">Hello Team,<br>Please check the social media report below.</p>
-        <h2 style="font-size:18px;margin:4px 0 10px">Project and account performance</h2>
+        <p style="margin:0 0 18px;color:#35465e;line-height:1.55">Hello Team,<br>Please find the social media report below.</p>
         <div style="overflow-x:auto;border:1px solid #dce4f0;border-radius:8px">
             <table style="border-collapse:collapse;width:100%;min-width:1500px;font-size:12px">
                 <thead><tr>@foreach($report['columns'] as $column)<th style="background:#edf3fb;text-align:left;padding:9px;border-bottom:1px solid #dce4f0;white-space:nowrap">{{ $column }}</th>@endforeach</tr></thead>
