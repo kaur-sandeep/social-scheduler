@@ -411,7 +411,7 @@ class TikTokService
 
 
 
-public function dashboardForDailyReport(SocialPage $page, string $since, string $until, bool $includeMedia = true): array
+public function dashboardForDailyReport(SocialPage $page, string $since, string $until, bool $includeMedia = true, ?string $timezone = null): array
 {
     $account = $page->account;
 
@@ -523,7 +523,7 @@ public function dashboardForDailyReport(SocialPage $page, string $since, string 
                 }
             }
 
-            $tz = $this->resolveTimezone();
+            $tz = $timezone ?: $this->resolveTimezone();
 
             foreach ($videos as $item) {
                 if (empty($item['create_time'])) {

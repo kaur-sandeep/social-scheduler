@@ -8,6 +8,7 @@ use App\Models\SocialPage;
 use App\Services\AnalyticsReportSummaryService;
 use App\Services\Social\MetaAnalyticsService;
 use App\Services\Social\InstagramLoginService;
+use App\Services\Social\TikTokService;
 use App\Support\ReportMetric;
 use Illuminate\Console\Command;
 use Illuminate\Support\Carbon;
@@ -20,7 +21,7 @@ use Throwable;
 class SendDailySocialSummary extends Command
 {
     protected $signature = 'report:send-daily-social-summary {--preview : Generate a local sample report and CSV without emailing or recording it} {--date= : Report date in YYYY-MM-DD format} {--manual : Send now without requiring scheduled reports to be enabled} {--to= : Comma or semicolon separated recipient override for a manual send}';
-    protected $description = 'Email one consolidated daily Facebook and Instagram performance report';
+    protected $description = 'Email one consolidated daily Facebook, Instagram, and TikTok performance report';
 
     private const COLUMNS = [
         'Account Name', 'Account Type', 'Total Followers',
@@ -42,7 +43,7 @@ class SendDailySocialSummary extends Command
         'yesterday_shares', 'seven_day_shares', 'yesterday_saves', 'seven_day_saves',
     ];
 
-    public function handle(MetaAnalyticsService $analytics, AnalyticsReportSummaryService $summaryService, InstagramLoginService $instagram): int
+    public function handle(MetaAnalyticsService $analytics, AnalyticsReportSummaryService $summaryService, InstagramLoginService $instagram, TikTokService $tiktok): int
     {
         $timezone = config('social_reports.timezone', 'Asia/Kolkata');
         try {
@@ -89,7 +90,7 @@ class SendDailySocialSummary extends Command
         }
 
         try {
-            $report = $this->buildReport($analytics, $summaryService, $instagram, $reportDate, $timezone, $manual);
+            $report = $this->buildReport($analytics, $summaryService, $instagram, $tiktok, $reportDate, $timezone, $manual);
             Log::info('Daily social performance report data generated.', [
                 'report_date' => $reportDate,
                 'period' => $report['period_label'],
@@ -136,7 +137,7 @@ class SendDailySocialSummary extends Command
         });
     }
 
-    private function buildReport(MetaAnalyticsService $analytics, AnalyticsReportSummaryService $summaryService, InstagramLoginService $instagram, string $reportDate, string $timezone, bool $manual): array
+    private function buildReport(MetaAnalyticsService $analytics, AnalyticsReportSummaryService $summaryService, InstagramLoginService $instagram, TikTokService $tiktok, string $reportDate, string $timezone, bool $manual): array
     {
         $date = Carbon::parse($reportDate, $timezone)->startOfDay();
         // The detailed daily columns use the last completed day for scheduled
@@ -156,11 +157,34 @@ class SendDailySocialSummary extends Command
         $rows = [];
 
         $pages = SocialPage::query()->with(['account.project'])
-            ->whereIn('provider', ['facebook', 'instagram'])->where('status', 'active')
+            ->whereIn('provider', ['facebook', 'instagram', 'tiktok'])->where('status', 'active')
             ->whereHas('account', fn ($query) => $query->where('status', 'active')->whereHas('project'))
             ->get();
 
         foreach ($pages as $page) {
+            if ($page->provider === 'tiktok') {
+                $row = $this->emptyRow($page, 'tiktok');
+                try {
+                    $data = $tiktok->dashboardForDailyReport($page, $since, $until, true, $timezone);
+                    $row = $this->applyTikTokAnalytics($row, $data, $dayDate, $postsSince, $postsUntil, $timezone);
+                    try {
+                        $previousData = $tiktok->dashboardForDailyReport($page, $previousSince, $previousUntil, true, $timezone);
+                        $previousMedia = collect($previousData['media'] ?? []);
+                        $previousCount = ! empty($previousData['media_unavailable']) ? null : $previousMedia->count();
+                        $row['comparison'] = $this->comparison($row, $data, $previousData, 'tiktok', $since, $until, $previousSince, $previousUntil, $timezone, ['period' => $previousCount]);
+                    } catch (Throwable $exception) {
+                        $row['comparison'] = $this->unavailableComparison($row);
+                        Log::notice('Previous-period TikTok metrics unavailable.', ['social_page_id' => $page->id, 'message' => $exception->getMessage()]);
+                    }
+                    $row['metric_availability'] = ! empty($data['media_unavailable']) || ! empty($data['media_insights_unavailable']) ? 'Partial data' : 'Available';
+                } catch (Throwable $exception) {
+                    $row['account_error'] = true;
+                    $row['metric_availability'] = 'Unavailable';
+                    Log::warning('TikTok account metrics could not be fetched for daily report.', ['social_page_id' => $page->id, 'report_date' => $reportDate, 'message' => $exception->getMessage()]);
+                }
+                $rows[] = $row;
+                continue;
+            }
             if ($page->provider === 'instagram') {
                 $row = $this->emptyRow($page, 'instagram');
                 try {
@@ -232,7 +256,7 @@ class SendDailySocialSummary extends Command
             $leftBrand = $brandOrder[$this->brandForRow($left)] ?? 100;
             $rightBrand = $brandOrder[$this->brandForRow($right)] ?? 100;
             if ($leftBrand !== $rightBrand) return $leftBrand <=> $rightBrand;
-            $platformOrder = ['Facebook' => 0, 'Instagram' => 1];
+            $platformOrder = ['Facebook' => 0, 'Instagram' => 1, 'TikTok' => 2];
             $leftPlatform = $platformOrder[$left['account_type']] ?? 2;
             $rightPlatform = $platformOrder[$right['account_type']] ?? 2;
             return ($leftPlatform <=> $rightPlatform) ?: strcasecmp($left['account_name'], $right['account_name']);
@@ -250,7 +274,10 @@ class SendDailySocialSummary extends Command
             'highlights' => $this->highlights($rows, $dayLabel),
         ];
 
-        $report['brand_summaries'] = collect($rows)->groupBy('account_name')->map(fn ($accountRows, $accountName) => ['brand' => $accountName, 'accounts' => $accountRows->values()->all()])->values()->all();
+        $brandOrder = ['Belize On Top', 'Wheels Belize', 'Tourist Point'];
+        $report['brand_summaries'] = collect($rows)->groupBy(fn (array $row) => $this->brandForRow($row))
+            ->sortBy(fn ($accountRows, $brand) => array_search($brand, $brandOrder, true) === false ? 100 : array_search($brand, $brandOrder, true))
+            ->map(fn ($accountRows, $brand) => ['brand' => $brand, 'accounts' => $accountRows->values()->all()])->values()->all();
 
         return $report;
     }
@@ -289,7 +316,7 @@ class SendDailySocialSummary extends Command
         });
         $viewsName = $platform === 'instagram' ? 'views' : 'page_media_view';
         $reachName = $platform === 'instagram' ? 'reach_week' : 'page_total_media_view_unique_week';
-        $likesName = $platform === 'instagram' ? 'likes' : 'reactions';
+        $likesName = $platform === 'instagram' || $platform === 'tiktok' ? 'likes' : 'reactions';
         $sumMedia = fn (string $name) => $media->isNotEmpty() && $media->contains(fn ($item) => ! is_numeric(data_get($item, 'metrics.'.$name)))
             ? null : ($media->isEmpty() && ! empty($previousData['media_unavailable']) ? null : $media->sum(fn ($item) => (float) data_get($item, 'metrics.'.$name, 0)));
         $previous = [
@@ -297,9 +324,9 @@ class SendDailySocialSummary extends Command
             'follows' => $platform === 'facebook' ? $this->sumMetric($insights->get('page_daily_follows'), $since, $until, $timezone) : null,
             'unfollows' => $platform === 'facebook' ? $this->sumMetric($insights->get('page_daily_unfollows'), $since, $until, $timezone) : null,
             'net_growth' => null,
-            'posts' => $previousPosts['period'] ?? ($platform === 'instagram' && empty($previousData['media_unavailable']) ? $media->count() : null),
-            'views' => $this->sumMetric($insights->get($viewsName), $since, $until, $timezone),
-            'reach' => $this->periodMetric($insights->get($reachName)),
+            'posts' => $previousPosts['period'] ?? (in_array($platform, ['instagram', 'tiktok'], true) && empty($previousData['media_unavailable']) ? $media->count() : null),
+            'views' => $platform === 'tiktok' ? ($sumMedia('views')) : $this->sumMetric($insights->get($viewsName), $since, $until, $timezone),
+            'reach' => $platform === 'tiktok' ? null : $this->periodMetric($insights->get($reachName)),
             'likes' => empty($previousData['media_unavailable']) ? $sumMedia($likesName) : null,
             'comments' => empty($previousData['media_unavailable']) ? $sumMedia('comments') : null,
             'shares' => empty($previousData['media_unavailable']) ? $sumMedia('shares') : null,
@@ -310,8 +337,8 @@ class SendDailySocialSummary extends Command
         $currentFollows = $platform === 'facebook' ? $this->sumMetric($currentInsights->get('page_daily_follows'), $currentSince, $currentUntil, $timezone) : null;
         $currentUnfollows = $platform === 'facebook' ? $this->sumMetric($currentInsights->get('page_daily_unfollows'), $currentSince, $currentUntil, $timezone) : null;
         $current = [
-            'followers' => $currentRow['followers'], 'follows' => $currentFollows,
-            'unfollows' => $currentUnfollows, 'net_growth' => is_numeric($currentFollows) && is_numeric($currentUnfollows) ? $currentFollows - $currentUnfollows : null, 'posts' => $currentRow['seven_day_posts'],
+            'followers' => $currentRow['followers'], 'follows' => $platform === 'tiktok' ? null : $currentFollows,
+            'unfollows' => $platform === 'tiktok' ? null : $currentUnfollows, 'net_growth' => is_numeric($currentFollows) && is_numeric($currentUnfollows) ? $currentFollows - $currentUnfollows : null, 'posts' => $currentRow['seven_day_posts'],
             'views' => $currentRow['seven_day_views'], 'reach' => $currentRow['seven_day_unique_views'],
             'likes' => $currentRow['seven_day_likes'], 'comments' => $currentRow['seven_day_comments'],
             'shares' => $currentRow['seven_day_shares'], 'saves' => $currentRow['seven_day_saves'],
@@ -353,9 +380,10 @@ class SendDailySocialSummary extends Command
             $overall = 'Overall, results were mixed across '.implode(' and ', $mixedAreas).'.';
         }
         $byKey = collect($metrics)->keyBy('key');
-        $formatAvailable = function (array $keys) use ($byKey): array {
+        $formatAvailable = function (array $keys) use ($byKey, $platform): array {
             return collect($keys)->map(fn ($key) => $byKey->get($key))
                 ->filter(fn ($metric) => $metric && ! in_array($metric['state'], ['unavailable', 'same'], true))
+                ->filter(fn ($metric) => $platform !== 'tiktok' || ((float) $metric['a'] !== 0.0 && (float) $metric['b'] !== 0.0))
                 ->map(fn ($metric) => $this->comparisonMetricText($metric))->values()->all();
         };
         $points = [];
@@ -424,7 +452,7 @@ class SendDailySocialSummary extends Command
 
         return [
             'project' => $page->account?->project?->name ?? 'Unknown project',
-            'account_type' => ucfirst($platform),
+            'account_type' => $platform === 'tiktok' ? 'TikTok' : ucfirst($platform),
             'account_name' => $accountName,
             'metric_availability' => 'Unavailable',
             'followers' => null, 'yesterday_net_change' => null, 'yesterday_follows' => null, 'yesterday_unfollows' => null,
@@ -434,6 +462,40 @@ class SendDailySocialSummary extends Command
             'seven_day_shares' => null, 'yesterday_shares' => null, 'seven_day_saves' => null, 'yesterday_saves' => null,
             'account_error' => false,
         ];
+    }
+
+    private function applyTikTokAnalytics(array $row, array $data, string $day, string $since, string $until, string $timezone): array
+    {
+        $row['account_name'] = data_get($data, 'account.display_name') ?: $row['account_name'];
+        $followers = data_get($data, 'account.followers_count');
+        $row['followers'] = is_numeric($followers) ? ReportMetric::value($followers) : null;
+        $media = collect($data['media'] ?? []);
+        $dayMedia = $media->filter(fn ($item) => $this->publishedDate($item, $timezone) === $day);
+        $periodMedia = $media->filter(function ($item) use ($since, $until, $timezone) {
+            $date = $this->publishedDate($item, $timezone);
+            return $date !== null && $date >= $since && $date <= $until;
+        });
+        $sum = function ($items, string $metric) use ($data) {
+            if (! empty($data['media_unavailable']) || $items->contains(fn ($item) => ! is_numeric(data_get($item, 'metrics.'.$metric)))) return null;
+            return $items->sum(fn ($item) => (float) data_get($item, 'metrics.'.$metric));
+        };
+        $row['yesterday_posts'] = ! empty($data['media_unavailable']) ? null : $dayMedia->count();
+        $row['seven_day_posts'] = ! empty($data['media_unavailable']) ? null : $periodMedia->count();
+        $row['total_posts'] = is_numeric(data_get($data, 'account.media_count')) ? ReportMetric::value(data_get($data, 'account.media_count')) : null;
+        // TikTok analytics groups video totals by the videos' publication date.
+        $row['yesterday_views'] = $sum($dayMedia, 'views');
+        $row['seven_day_views'] = $sum($periodMedia, 'views');
+        foreach (['likes', 'comments', 'shares'] as $metric) {
+            $row['yesterday_'.$metric] = $sum($dayMedia, $metric);
+            $row['seven_day_'.$metric] = $sum($periodMedia, $metric);
+        }
+        // TikTok does not expose unique viewers, saves, or follower history.
+        $row['yesterday_follows'] = null;
+        $row['yesterday_unique_views'] = null;
+        $row['seven_day_unique_views'] = null;
+        $row['yesterday_saves'] = null;
+        $row['seven_day_saves'] = null;
+        return $row;
     }
 
     private function applyAnalytics(array $row, array $data, MetaAnalyticsService $analytics, SocialPage $page, string $platform, string $since, string $until, string $postsSince, string $postsUntil, string $day, string $timezone): array

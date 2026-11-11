@@ -341,7 +341,7 @@ class DailySocialSummaryReportTest extends TestCase
         config(['social_reports.timezone' => 'Asia/Kolkata', 'social_reports.recipients' => ['manager@example.com']]);
         $user = User::factory()->create(['is_admin' => true]);
         $date = now('Asia/Kolkata')->toDateString();
-        $lock = Cache::lock('manual-daily-social-report:'.$date, 900);
+        $lock = Cache::lock('manual-daily-social-report:'.$date, 600);
         $this->assertTrue($lock->get());
 
         try {

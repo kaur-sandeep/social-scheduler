@@ -27,10 +27,28 @@ class AnalyticsController extends Controller
             return response()->json(['message' => 'No manager email recipients are configured.'], 422);
         }
 
-        $lock = Cache::lock('manual-daily-social-report:'.now(config('social_reports.timezone', 'Asia/Kolkata'))->toDateString(), 900);
+        $lock = Cache::lock('manual-daily-social-report:'.now(config('social_reports.timezone', 'Asia/Kolkata'))->toDateString(), 600);
         if (! $lock->get()) {
             return response()->json(['message' => 'A report is already being generated. Please wait before trying again.'], 429);
         }
+
+        $lockReleased = false;
+        $releaseLock = static function () use ($lock, &$lockReleased): void {
+            if ($lockReleased) return;
+            $lockReleased = true;
+
+            try {
+                $lock->release();
+            } catch (Throwable $exception) {
+                Log::warning('Could not release the manual daily report lock; it will expire automatically.', [
+                    'message' => $exception->getMessage(),
+                ]);
+            }
+        };
+
+        // finally handles normal returns and exceptions; the shutdown callback
+        // also handles PHP fatal errors and execution-timeout termination.
+        register_shutdown_function($releaseLock);
 
         try {
             // Fixed server-side command; request data cannot select a command or recipient.
@@ -45,16 +63,9 @@ class AnalyticsController extends Controller
             Log::error('Manual daily social report request failed.', ['user_id' => $request->user()->id, 'message' => $exception->getMessage(), 'exception' => $exception]);
             return response()->json(['message' => 'The report email could not be sent. Check the mail configuration and application log.'], 500);
         } finally {
-            // The email may already have been sent by this point. A cache backend
-            // failure while releasing the anti-double-click lock must not turn that
-            // successful request into an HTTP 500 (and encourage the user to resend).
-            try {
-                $lock->release();
-            } catch (Throwable $exception) {
-                Log::warning('Could not release the manual daily report lock; it will expire automatically.', [
-                    'message' => $exception->getMessage(),
-                ]);
-            }
+            // The email may already have been sent; release failures must not
+            // turn successful delivery into an HTTP error that encourages a resend.
+            $releaseLock();
         }
     }
 

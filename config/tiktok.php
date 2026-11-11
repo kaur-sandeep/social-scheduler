@@ -16,5 +16,8 @@ return [
     //     // 'video.publish',
     // ],
 
-    'scopes' => ['user.info.basic', 'user.info.profile', 'user.info.stats', 'video.list', 'video.publish'],
+    // 'scopes' => ['user.info.basic', 'user.info.profile', 'user.info.stats', 'video.list', 'video.publish'],
+    'scopes' => ['user.info.basic', 'user.info.profile', 'user.info.stats', 'video.list', 
+    // 'video.publish'
+    ],
 ];
