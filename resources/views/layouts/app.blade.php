@@ -57,7 +57,7 @@
             <div class="topbar-actions">
                 @if(request()->routeIs('comment-reports.index'))
                     <button class="btn btn-primary" type="button" data-bs-toggle="modal" data-bs-target="#addCommentReportModal"><i class="bi bi-plus-lg"></i> Add Comment Report</button>
-                @else
+                @elseif(!request()->routeIs('comment-reports.edit'))
                     <a class="btn btn-primary" href="{{ route('posts.create') }}"><i class="bi bi-plus-lg"></i> New Post</a>
                 @endif
                 <form method="post" action="{{ route('logout') }}">

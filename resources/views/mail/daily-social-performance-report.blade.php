@@ -21,6 +21,55 @@
         @if(collect($report['table_groups'])->every(fn ($group) => empty($group['rows'])))
             <p style="padding:14px;text-align:center;color:#68778b">No active Facebook, Instagram, or TikTok accounts were found.</p>
         @endif
+        @if(!empty($report['comment_report_rows']))
+        <h2 style="font-size:18px;margin:24px 0 8px">Comments report summary</h2>
+        <p style="margin:0 0 12px;color:#68778b;font-size:12px">Comments totals are grouped by report date. {{ $report['comment_day_label'] }}: {{ $report['comment_day_date'] }} &nbsp;|&nbsp; Last 7 days: {{ $report['comment_seven_day_label'] }}</p>
+        <div style="overflow-x:auto;border:1px solid #dce4f0;border-radius:8px;margin-bottom:12px">
+            <table style="border-collapse:collapse;width:100%;min-width:600px;font-size:12px">
+                <thead><tr>
+                    <th style="background:#edf3fb;text-align:left;padding:10px;border-bottom:1px solid #dce4f0">Project Name</th>
+                    <th style="background:#edf3fb;text-align:left;padding:10px;border-bottom:1px solid #dce4f0">Account Type</th>
+                    <th style="background:#edf3fb;text-align:right;padding:10px;border-bottom:1px solid #dce4f0">{{ $report['comment_day_label'] }} Comments Count</th>
+                    <th style="background:#edf3fb;text-align:right;padding:10px;border-bottom:1px solid #dce4f0">Last 7 Days Comments Count</th>
+                </tr></thead>
+                <tbody>
+                    @foreach($report['comment_report_rows'] as $commentRow)
+                        <tr>
+                            <td style="padding:10px;border-bottom:1px solid #edf1f7">{{ $commentRow['project_name'] }}</td>
+                            <td style="padding:10px;border-bottom:1px solid #edf1f7">{{ $commentRow['account_type'] }}</td>
+                            <td style="padding:10px;text-align:right;border-bottom:1px solid #edf1f7">{{ number_format($commentRow['day_comments']) }}</td>
+                            <td style="padding:10px;text-align:right;border-bottom:1px solid #edf1f7">{{ number_format($commentRow['seven_day_comments']) }}</td>
+                        </tr>
+                    @endforeach
+                </tbody>
+            </table>
+        </div>
+        @endif
+        @if(!empty($report['comment_detail_rows']))
+        <h3 style="font-size:15px;margin:18px 0 8px">Comments details and post URLs</h3>
+        <div style="overflow-x:auto;border:1px solid #dce4f0;border-radius:8px;margin-bottom:12px">
+            <table style="border-collapse:collapse;width:100%;min-width:800px;font-size:12px;table-layout:fixed">
+                <thead><tr>
+                    <th style="width:105px;background:#edf3fb;text-align:left;padding:10px;border-bottom:1px solid #dce4f0">Report Date</th>
+                    <th style="width:140px;background:#edf3fb;text-align:left;padding:10px;border-bottom:1px solid #dce4f0">Project Name</th>
+                    <th style="width:100px;background:#edf3fb;text-align:left;padding:10px;border-bottom:1px solid #dce4f0">Account Type</th>
+                    <th style="background:#edf3fb;text-align:left;padding:10px;border-bottom:1px solid #dce4f0">Comment</th>
+                    <th style="width:190px;background:#edf3fb;text-align:left;padding:10px;border-bottom:1px solid #dce4f0">Post URL</th>
+                </tr></thead>
+                <tbody>
+                    @foreach($report['comment_detail_rows'] as $detailRow)
+                        <tr>
+                            <td style="vertical-align:top;padding:10px;border-bottom:1px solid #edf1f7">{{ $detailRow['report_date'] }}</td>
+                            <td style="vertical-align:top;padding:10px;border-bottom:1px solid #edf1f7;overflow-wrap:anywhere">{{ $detailRow['project_name'] }}</td>
+                            <td style="vertical-align:top;padding:10px;border-bottom:1px solid #edf1f7">{{ $detailRow['account_type'] }}</td>
+                            <td style="vertical-align:top;padding:10px;border-bottom:1px solid #edf1f7;white-space:pre-wrap;overflow-wrap:anywhere">{{ $detailRow['comment_text'] }}</td>
+                            <td style="vertical-align:top;padding:10px;border-bottom:1px solid #edf1f7;overflow-wrap:anywhere"><a href="{{ $detailRow['post_url'] }}" style="color:#1769aa">View post</a></td>
+                        </tr>
+                    @endforeach
+                </tbody>
+            </table>
+        </div>
+        @endif
         <h2 style="font-size:18px;margin:24px 0 8px">Performance summary</h2>
         <p style="margin:0 0 12px;color:#68778b;font-size:12px">Current period: {{ $report['current_period']['label'] }} &nbsp;|&nbsp; Previous period: {{ $report['previous_period']['label'] }}</p>
         @foreach($report['brand_summaries'] as $brandSummary)

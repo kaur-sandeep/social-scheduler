@@ -42,8 +42,8 @@ class MetaAnalyticsService
         mixed $instagramMediaCount = null,
     ): array {
         $id = $platform === 'instagram' ? $page->instagram_business_id : $page->page_id;
-        $cacheKey = 'meta-published-counts-v3:'.hash('sha256', implode('|', [
-            $page->id, $platform, $since, $until, $day, $id, $instagramMediaCount, hash('sha256', (string) $page->page_access_token),
+        $cacheKey = 'meta-published-counts-v4:'.hash('sha256', implode('|', [
+            $page->id, $platform, $since, $until, $day, $timezone, $id, $instagramMediaCount, hash('sha256', (string) $page->page_access_token),
         ]));
 
         try {
@@ -65,7 +65,7 @@ class MetaAnalyticsService
                     : (int) data_get($this->get('/'.$id, ['fields' => 'id,media_count', 'access_token' => $page->page_access_token], true), 'media_count', 0);
                 $startDate = min($since, $day);
                 $endDate = max($until, $day);
-                $counts = $this->instagramMediaCounts($id, $page->page_access_token, $startDate, $endDate, $since, $until, $day, $timezone);
+                $counts = $this->instagramMediaCounts($id, $page->page_access_token, $startDate, $endDate, $since, $until, $day, $timezone, $instagramMediaCount);
                 return ['total' => $total, 'day' => $counts['day'], 'period' => $counts['period']];
             });
         } catch (\Throwable $exception) {
@@ -114,7 +114,7 @@ class MetaAnalyticsService
         return max(is_numeric($summaryCount) ? (int) $summaryCount : 0, $paginatedCount);
     }
 
-    private function instagramMediaCounts(string $instagramId, string $token, string $requestSince, string $requestUntil, string $countSince, string $countUntil, string $day, string $timezone): array
+    private function instagramMediaCounts(string $instagramId, string $token, string $requestSince, string $requestUntil, string $countSince, string $countUntil, string $day, string $timezone, mixed $instagramMediaCount = null): array
     {
         $from = Carbon::parse($requestSince, $timezone)->startOfDay();
         $to = Carbon::parse($requestUntil, $timezone)->endOfDay();
@@ -126,9 +126,10 @@ class MetaAnalyticsService
             'access_token' => $token,
         ];
         $media = $this->collectPagedMedia('/'.$instagramId.'/media', $query);
-        if ($media === null) {
-            // If the endpoint does not accept time filters for this account/version,
-            // paginate only IDs and timestamps and apply the same local date bounds.
+        if ($media === null || ($media === [] && is_numeric($instagramMediaCount) && (int) $instagramMediaCount > 0)) {
+            // Some Instagram media edges accept the request but return no results
+            // for time filters. Fall back to timestamp filtering locally so a
+            // published post is not silently reported as zero.
             $media = $this->collectPagedMedia('/'.$instagramId.'/media', [
                 'fields' => 'id,timestamp', 'limit' => 100, 'access_token' => $token,
             ]) ?? [];

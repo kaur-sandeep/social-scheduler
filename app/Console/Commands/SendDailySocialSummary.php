@@ -3,6 +3,7 @@
 namespace App\Console\Commands;
 
 use App\Mail\DailySocialPerformanceReport;
+use App\Models\CommentReport;
 use App\Models\DailySocialReport;
 use App\Models\SocialPage;
 use App\Services\AnalyticsReportSummaryService;
@@ -140,10 +141,10 @@ class SendDailySocialSummary extends Command
     private function buildReport(MetaAnalyticsService $analytics, AnalyticsReportSummaryService $summaryService, InstagramLoginService $instagram, TikTokService $tiktok, string $reportDate, string $timezone, bool $manual): array
     {
         $date = Carbon::parse($reportDate, $timezone)->startOfDay();
-        // The detailed daily columns use the last completed day for scheduled
-        // runs; the seven-day window always ends on reportDate, including the
-        // current day at the 23:55 send time.
-        $day = $manual ? $date : $date->copy()->subDay();
+        // Scheduled emails run at 23:55, so their daily columns cover the full
+        // report date. The email keeps the familiar "Yesterday" labels because
+        // the team reviews this report the following day.
+        $day = $date;
         $dayLabel = $manual ? 'today' : 'yesterday';
         $dayDate = $day->toDateString();
         $postsUntil = $date->toDateString();
@@ -203,7 +204,10 @@ class SendDailySocialSummary extends Command
                         // not incorrectly shown as zero beside the seven-day total.
                         $dailyData = $instagram->dashboardForDailyReport($page, $dayDate, $dayDate, false);
                         $dailyMetrics = collect($dailyData['insights'] ?? [])->keyBy('name');
-                        $row['yesterday_views'] = $this->dailyMetric($dailyMetrics->get('views'), $dayDate, $timezone);
+                        $dailyViews = $this->dailyMetric($dailyMetrics->get('views'), $dayDate, $timezone);
+                        // Keep the per-post view fallback calculated from the
+                        // account media response when the daily insight is zero.
+                        if (is_numeric($dailyViews) && $dailyViews > 0) $row['yesterday_views'] = $dailyViews;
                         $row['yesterday_unique_views'] = $this->dailyMetric($dailyMetrics->get('reach'), $dayDate, $timezone);
                         $data['insights_unavailable'] = array_values(array_unique(array_merge($data['insights_unavailable'] ?? [], $dailyData['insights_unavailable'] ?? [])));
                     } catch (Throwable $exception) {
@@ -272,6 +276,38 @@ class SendDailySocialSummary extends Command
             'columns' => $columns,
             'column_keys' => self::COLUMN_KEYS,
             'highlights' => $this->highlights($rows, $dayLabel),
+            'comment_report_rows' => CommentReport::query()
+                ->whereBetween('report_date', [$postsSince, $postsUntil])
+                ->selectRaw('project_name, account_type, SUM(CASE WHEN report_date = ? THEN number_of_comments ELSE 0 END) as day_comments, SUM(number_of_comments) as seven_day_comments', [$dayDate])
+                ->groupBy('project_name', 'account_type')
+                ->orderBy('project_name')
+                ->orderBy('account_type')
+                ->get()
+                ->map(fn (CommentReport $commentReport) => [
+                    'project_name' => $commentReport->project_name,
+                    'account_type' => ucfirst(strtolower($commentReport->account_type)),
+                    'day_comments' => (int) $commentReport->day_comments,
+                    'seven_day_comments' => (int) $commentReport->seven_day_comments,
+                ])->all(),
+            'comment_detail_rows' => CommentReport::query()
+                ->with('posts')
+                ->whereBetween('report_date', [$postsSince, $postsUntil])
+                ->orderBy('report_date')
+                ->orderBy('project_name')
+                ->orderBy('account_type')
+                ->get()
+                ->flatMap(fn (CommentReport $commentReport) => $commentReport->posts->map(fn ($post) => [
+                    'report_date' => $commentReport->report_date->format('M j, Y'),
+                    'project_name' => $commentReport->project_name,
+                    'account_type' => ucfirst(strtolower($commentReport->account_type)),
+                    'comment_text' => $post->comment_text,
+                    'post_url' => $post->post_url,
+                ]))
+                ->values()
+                ->all(),
+            'comment_day_label' => ucfirst($dayLabel),
+            'comment_day_date' => Carbon::parse($dayDate, $timezone)->format('M j, Y'),
+            'comment_seven_day_label' => Carbon::parse($postsSince, $timezone)->format('M j').'–'.Carbon::parse($postsUntil, $timezone)->format('M j, Y'),
         ];
 
         $brandOrder = ['Belize On Top', 'Wheels Belize', 'Tourist Point'];
@@ -526,10 +562,15 @@ class SendDailySocialSummary extends Command
             if ($platform === 'instagram' && $posts->isNotEmpty() && $posts->contains(fn ($item) => ! is_numeric(data_get($item, 'metrics.'.$name)))) return null;
             return $posts->sum(fn ($item) => is_numeric(data_get($item, 'metrics.'.$name)) ? (float) data_get($item, 'metrics.'.$name) : 0);
         };
-        // Views and unique viewers are page/account daily insights, not lifetime
-        // views on content that happened to be published on that same date.
+        // Weekly views and unique viewers are account insights. If Instagram's
+        // daily account insight is zero, use the view count on media published
+        // that day so a post with views is not reported as zero.
         $row['seven_day_views'] = $this->sumMetric($metricMap->get($viewsName), $postsSince, $postsUntil, $timezone);
         $row['yesterday_views'] = $this->dailyMetric($metricMap->get($viewsName), $day, $timezone);
+        if ($platform === 'instagram' && (! is_numeric($row['yesterday_views']) || $row['yesterday_views'] <= 0)) {
+            $postViews = $mediaUnavailable ? null : $sumPostMetric($todayItems, 'views');
+            if (is_numeric($postViews) && $postViews > 0) $row['yesterday_views'] = $postViews;
+        }
         $row['yesterday_unique_views'] = $this->dailyMetric($metricMap->get($uniqueName), $day, $timezone);
         // Use Meta's weekly aggregation for unique viewers; summing daily unique
         // audiences would double-count people who viewed on multiple days.

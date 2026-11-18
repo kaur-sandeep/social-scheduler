@@ -23,33 +23,57 @@
         @else
             <div class="table-responsive">
                 <table class="table table-hover align-middle mb-0">
-                    <thead><tr><th>Project</th><th>Account type</th><th>Report date</th><th class="text-end">Comments</th><th>Details</th></tr></thead>
+                    <thead><tr><th>Project</th><th>Account type</th><th>Report date</th><th>Comments</th><th>Created at</th><th class="text-end">Actions</th></tr></thead>
                     <tbody>
                         @foreach($reports as $report)
                             <tr>
                                 <td class="fw-semibold">{{ $report->project_name }}</td>
                                 <td><span class="badge rounded-pill text-bg-light border">{{ $report->account_type }}</span></td>
                                 <td>{{ $report->report_date->format('M d, Y') }}</td>
-                                <td class="text-end">{{ $report->number_of_comments }}</td>
-                                <td>
-                                    <details>
-                                        <summary class="small text-primary" role="button">View comments and URLs</summary>
-                                        <div class="mt-2" style="min-width:280px;max-width:560px">
-                                            @foreach($report->posts as $post)
-                                                <div class="border rounded-3 p-2 mb-2 small">
-                                                    <div class="fw-semibold mb-1">Comment {{ $post->position }}</div>
-                                                    <div class="text-break mb-1">{{ $post->comment_text }}</div>
-                                                    <a class="text-break" href="{{ $post->post_url }}" target="_blank" rel="noopener noreferrer">{{ $post->post_url }}</a>
-                                                </div>
-                                            @endforeach
-                                        </div>
-                                    </details>
+                                <td><button type="button" class="btn btn-sm btn-outline-primary" data-bs-toggle="modal" data-bs-target="#commentReportDetails{{ $report->id }}"><i class="bi bi-eye me-1"></i> View comments <span class="badge text-bg-primary ms-1">{{ $report->number_of_comments }}</span></button></td>
+                                <td>{{ $report->created_at->format('M d, Y g:i A') }}</td>
+                                <td class="text-end text-nowrap">
+                                    <a href="{{ route('comment-reports.edit', $report->id) }}" class="btn btn-sm btn-outline-primary" aria-label="Edit report">
+                                        <i class="bi bi-pencil-square"></i> Edit
+                                    </a>
+                                    <form method="post" action="{{ route('comment-reports.destroy', $report->id) }}" class="d-inline" onsubmit="return confirm('Delete this comment report? This cannot be undone.');">
+                                        @csrf
+                                        @method('DELETE')
+                                        <button type="submit" class="btn btn-sm btn-outline-danger" aria-label="Delete report">
+                                            <i class="bi bi-trash"></i> Delete
+                                        </button>
+                                    </form>
                                 </td>
                             </tr>
                         @endforeach
                     </tbody>
                 </table>
             </div>
+            @foreach($reports as $report)
+                <div class="modal fade" id="commentReportDetails{{ $report->id }}" tabindex="-1" aria-labelledby="commentReportDetailsTitle{{ $report->id }}" aria-hidden="true">
+                    <div class="modal-dialog modal-lg modal-dialog-scrollable">
+                        <div class="modal-content">
+                            <div class="modal-header">
+                                <div>
+                                    <h2 class="modal-title h5" id="commentReportDetailsTitle{{ $report->id }}">Comment report details</h2>
+                                    <p class="text-muted small mb-0">{{ $report->project_name }} · {{ $report->account_type }} · {{ $report->report_date->format('M d, Y') }}</p>
+                                </div>
+                                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                            </div>
+                            <div class="modal-body">
+                                @foreach($report->posts as $post)
+                                    <article class="border rounded-3 p-3 mb-3">
+                                        <h3 class="h6 mb-2">Comment {{ $post->position }}</h3>
+                                        <p class="text-break mb-2">{{ $post->comment_text }}</p>
+                                        <a class="text-break" href="{{ $post->post_url }}" target="_blank" rel="noopener noreferrer">{{ $post->post_url }}</a>
+                                    </article>
+                                @endforeach
+                            </div>
+                            <div class="modal-footer"><button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button></div>
+                        </div>
+                    </div>
+                </div>
+            @endforeach
             <div class="mt-3">{{ $reports->links() }}</div>
         @endif
     </div>
@@ -70,7 +94,12 @@
                     <div class="row g-3">
                         <div class="col-md-6">
                             <label for="project_name" class="form-label">Project Name <span class="text-danger">*</span></label>
-                            <input id="project_name" name="project_name" class="form-control @error('project_name') is-invalid @enderror" value="{{ old('project_name') }}" required maxlength="255" placeholder="Enter project name">
+                            <select id="project_name" name="project_name" class="form-select @error('project_name') is-invalid @enderror" required>
+                                <option value="">Select project</option>
+                                @foreach($projectNames as $projectName)
+                                    <option value="{{ $projectName }}" @selected(old('project_name') === $projectName)>{{ $projectName }}</option>
+                                @endforeach
+                            </select>
                             @error('project_name')<div class="invalid-feedback">{{ $message }}</div>@enderror
                         </div>
                         <div class="col-md-6">
@@ -97,7 +126,7 @@
                     </div>
 
                     <div class="d-flex align-items-center justify-content-between mt-4 mb-2">
-                        <h3 class="h6 mb-0">Comments and recommended post URLs</h3>
+                        <h3 class="h6 mb-0"><b>Comments and post URLs </b><span class="text-danger">*</span></h3>
                         <span class="badge text-bg-light border" id="entryCountBadge">1 entries</span>
                     </div>
                     @if($errors->has('comments') || $errors->has('post_urls'))

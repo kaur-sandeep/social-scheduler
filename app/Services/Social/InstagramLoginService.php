@@ -156,6 +156,7 @@ class InstagramLoginService
             }
         }
 
+        $timezone = config('social_reports.timezone', config('app.timezone', 'UTC'));
         $mediaUnavailable = false;
         $media = [];
         if ($includeMedia) {
@@ -163,23 +164,39 @@ class InstagramLoginService
                 // The media edge belongs to the authenticated IG user ID. Keep
                 // /me for profile/insights, but use the explicit ID for media.
                 $media = $this->pagedWithTokenRecovery($page, '/'.$page->page_id.'/media', [
-                    'fields' => 'id,caption,media_type,media_product_type,timestamp,permalink,like_count,comments_count',
+                    // media_product_type is only available through Facebook Login;
+                    // standalone Instagram Login accounts must request media_type.
+                    'fields' => 'id,caption,media_type,timestamp,permalink,like_count,comments_count',
                     'limit' => 100,
                     'access_token' => $token,
-                ], $token);
+                ], $token, $since, $timezone);
             } catch (RuntimeException $exception) {
-                // Media details enrich the report; they must not block profile and
-                // account-level insights when Meta rejects the media edge.
-                $mediaUnavailable = true;
-                Log::notice('Instagram post details are unavailable; returning account-level analytics.', [
+                // Optional caption and engagement fields can be unavailable for
+                // some Instagram Login accounts. Retry the media edge with only
+                // fields required to count posts by publication date.
+                Log::notice('Instagram detailed media fields were rejected; retrying with count fields.', [
                     'social_page_id' => $page->id,
                     'message' => $exception->getMessage(),
                 ]);
+                try {
+                    $media = $this->pagedWithTokenRecovery($page, '/'.$page->page_id.'/media', [
+                        'fields' => 'id,media_type,timestamp',
+                        'limit' => 100,
+                        'access_token' => $token,
+                    ], $token, $since, $timezone);
+                } catch (RuntimeException $fallbackException) {
+                    // Media details enrich the report; they must not block profile
+                    // and account-level insights when even the count fields fail.
+                    $mediaUnavailable = true;
+                    Log::notice('Instagram post details are unavailable; returning account-level analytics.', [
+                        'social_page_id' => $page->id,
+                        'message' => $fallbackException->getMessage(),
+                    ]);
+                }
             }
         }
         $mediaRows = [];
         $mediaInsightsUnavailable = [];
-        $timezone = config('social_reports.timezone', config('app.timezone', 'UTC'));
         foreach ($media as $item) {
             if (empty($item['timestamp'])) continue;
             $date = Carbon::parse($item['timestamp'])->setTimezone($timezone)->toDateString();
@@ -301,17 +318,17 @@ class InstagramLoginService
         }
     }
 
-    private function pagedWithTokenRecovery(SocialPage $page, string $path, array $query, string &$token): array
+    private function pagedWithTokenRecovery(SocialPage $page, string $path, array $query, string &$token, ?string $since = null, ?string $timezone = null): array
     {
         try {
-            return $this->paged($path, $query);
+            return $this->paged($path, $query, $since, $timezone);
         } catch (RuntimeException $exception) {
             if (! $this->isInvalidTokenError($exception)) throw $exception;
             Log::warning('Instagram rejected a media API token; attempting a refresh and one retry.', ['social_page_id' => $page->id, 'api_path' => $path]);
             $token = $this->refreshToken($page);
             $query['access_token'] = $token;
             try {
-                return $this->paged($path, $query);
+                return $this->paged($path, $query, $since, $timezone);
             } catch (RuntimeException $retryException) {
                 if (! $this->isInvalidTokenError($retryException)) throw $retryException;
 
@@ -329,11 +346,12 @@ class InstagramLoginService
         return $metric;
     }
 
-    private function paged(string $path, array $query): array
+    private function paged(string $path, array $query, ?string $since = null, ?string $timezone = null): array
     {
         $items = [];
         $seen = [];
         $url = $this->base.$path;
+        $accessToken = $query['access_token'] ?? null;
         do {
             $response = Http::timeout(25)->get($url, $query);
             if ($response->failed()) {
@@ -352,14 +370,34 @@ class InstagramLoginService
             $loggedResponse = $json;
             if (isset($loggedResponse['paging']['next'])) $loggedResponse['paging']['next'] = '[redacted pagination URL]';
             Log::info('Instagram media API page retrieved.', ['api_path' => $path, 'http_status' => $response->status(), 'returned_count' => count($json['data'] ?? []), 'has_next_page' => (bool) data_get($json, 'paging.next'), 'meta_response' => $loggedResponse]);
-            $items = array_merge($items, $json['data'] ?? []);
+            $pageItems = $json['data'] ?? [];
+            $items = array_merge($items, $pageItems);
+            // Instagram media is returned newest first. Stop once this page
+            // reaches media older than the requested report window; older pages
+            // cannot contribute to the daily or seven-day counts.
+            if ($since && $pageItems !== []) {
+                $pageDates = collect($pageItems)
+                    ->pluck('timestamp')
+                    ->filter()
+                    ->map(fn ($timestamp) => Carbon::parse($timestamp)->setTimezone($timezone ?: config('social_reports.timezone', 'UTC'))->toDateString());
+                if ($pageDates->isNotEmpty() && $pageDates->min() < $since) break;
+            }
             $url = data_get($json, 'paging.next');
             if ($url) {
-                if (isset($seen[$url])) throw new RuntimeException('Instagram media pagination repeated a next URL.');
                 $parsed = parse_url($url);
                 if (($parsed['scheme'] ?? '') !== 'https' || strtolower($parsed['host'] ?? '') !== 'graph.instagram.com') {
                     throw new RuntimeException('Instagram media pagination returned an unexpected host.');
                 }
+                // Meta's paging URL can embed the token used on the first page.
+                // Replace it so a refreshed token is used for every page too.
+                if (is_string($accessToken) && $accessToken !== '') {
+                    parse_str($parsed['query'] ?? '', $nextQuery);
+                    $nextQuery['access_token'] = $accessToken;
+                    $url = $parsed['scheme'].'://'.$parsed['host'].($parsed['path'] ?? '')
+                        .'?'.http_build_query($nextQuery);
+                    if (! empty($parsed['fragment'])) $url .= '#'.$parsed['fragment'];
+                }
+                if (isset($seen[$url])) throw new RuntimeException('Instagram media pagination repeated a next URL.');
                 $seen[$url] = true;
             }
             $query = [];
