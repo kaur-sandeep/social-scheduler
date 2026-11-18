@@ -28,6 +28,7 @@
             <a class="nav-link {{ request()->routeIs('posts.index') ? 'active' : '' }}" href="{{ route('posts.index') }}"><i class="bi bi-list-task"></i> Scheduled Posts</a>
             <a class="nav-link {{ request()->routeIs('posts.imports.*') ? 'active' : '' }}" href="{{ route('posts.imports.index') }}"><i class="bi bi-file-earmark-arrow-up"></i> Import Posts</a>
             <a class="nav-link {{ request()->routeIs('analytics.*', 'accounts.analytics') ? 'active' : '' }}" href="{{ route('analytics.index') }}"><i class="bi bi-bar-chart"></i> Analytics</a>
+            <a class="nav-link {{ request()->routeIs('comment-reports.*') ? 'active' : '' }}" href="{{ route('comment-reports.index') }}"><i class="bi bi-chat-square-text"></i> Comment Report</a>
         </nav>
         <div class="sidebar-section">Administration</div>
         <nav class="nav flex-column gap-1">
@@ -54,7 +55,11 @@
                 <p>@yield('subtitle', 'Internal social publishing operations')</p>
             </div>
             <div class="topbar-actions">
-                <a class="btn btn-primary" href="{{ route('posts.create') }}"><i class="bi bi-plus-lg"></i> New Post</a>
+                @if(request()->routeIs('comment-reports.index'))
+                    <button class="btn btn-primary" type="button" data-bs-toggle="modal" data-bs-target="#addCommentReportModal"><i class="bi bi-plus-lg"></i> Add Comment Report</button>
+                @else
+                    <a class="btn btn-primary" href="{{ route('posts.create') }}"><i class="bi bi-plus-lg"></i> New Post</a>
+                @endif
                 <form method="post" action="{{ route('logout') }}">
                     @csrf
                     <button class="btn btn-icon" title="Sign out"><i class="bi bi-box-arrow-right"></i></button>

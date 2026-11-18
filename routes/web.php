@@ -18,6 +18,7 @@ use App\Http\Controllers\TikTokController;
 use App\Http\Controllers\Admin\ProjectSettingsController;
 use App\Http\Controllers\Admin\PostImportController;
 use App\Http\Controllers\Admin\AnalyticsController;
+use App\Http\Controllers\Admin\CommentReportController;
 
 Route::middleware('guest')->group(function () {
     Route::get('/login', [AuthController::class, 'create'])->name('login');
@@ -84,6 +85,8 @@ Route::middleware('auth')->group(function () {
 
     Route::get('/logs', [LogController::class, 'index'])->name('logs.index');
     Route::get('/analytics', [AnalyticsController::class, 'index'])->name('analytics.index');
+    Route::get('/comment-reports', [CommentReportController::class, 'index'])->name('comment-reports.index');
+    Route::post('/comment-reports', [CommentReportController::class, 'store'])->name('comment-reports.store');
     Route::post('/admin/analytics/send-test-report', [AnalyticsController::class, 'sendTestReport'])->name('analytics.send-test-report');
     Route::view('/media-library', 'media.index')->name('media.index');
     Route::get('/settings', [SettingsController::class, 'index'])->name('settings.index');
