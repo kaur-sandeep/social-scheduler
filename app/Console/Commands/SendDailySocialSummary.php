@@ -278,6 +278,9 @@ class SendDailySocialSummary extends Command
         $report['brand_summaries'] = collect($rows)->groupBy(fn (array $row) => $this->brandForRow($row))
             ->sortBy(fn ($accountRows, $brand) => array_search($brand, $brandOrder, true) === false ? 100 : array_search($brand, $brandOrder, true))
             ->map(fn ($accountRows, $brand) => ['brand' => $brand, 'accounts' => $accountRows->values()->all()])->values()->all();
+        $report['table_groups'] = collect(['Belize On Top', 'Wheels Belize', 'Tourist Point'])
+            ->map(fn ($brand) => ['brand' => $brand, 'rows' => collect($rows)->filter(fn (array $row) => $this->brandForRow($row) === $brand)->values()->all()])
+            ->all();
 
         return $report;
     }
@@ -388,15 +391,14 @@ class SendDailySocialSummary extends Command
         };
         $points = [];
         $followerPoints = $formatAvailable(['follows', 'unfollows', 'net_growth']);
-        $platformPrefix = ucfirst($platform).' — ';
-        if ($followerPoints !== []) $points[] = $platformPrefix.'Follower growth: '.implode('; ', $followerPoints).'.';
+        if ($followerPoints !== []) $points[] = 'Follower growth: '.implode('; ', $followerPoints).'.';
         $engagementPoints = $formatAvailable(['likes', 'comments', 'shares', 'saves']);
-        if ($engagementPoints !== []) $points[] = $platformPrefix.'Engagement: '.implode('; ', $engagementPoints).'.';
+        if ($engagementPoints !== []) $points[] = 'Engagement: '.implode('; ', $engagementPoints).'.';
         $visibilityPoints = $formatAvailable(['views', 'reach']);
-        if ($visibilityPoints !== []) $points[] = $platformPrefix.'Visibility: '.implode('; ', $visibilityPoints).'.';
+        if ($visibilityPoints !== []) $points[] = 'Visibility: '.implode('; ', $visibilityPoints).'.';
         $publishingPoints = $formatAvailable(['posts']);
-        if ($publishingPoints !== []) $points[] = $platformPrefix.'Publishing activity: '.implode('; ', $publishingPoints).'.';
-        if ($overall !== null) $points[] = $platformPrefix.'Overall performance: '.$overall;
+        if ($publishingPoints !== []) $points[] = 'Publishing activity: '.implode('; ', $publishingPoints).'.';
+        if ($overall !== null) $points[] = 'Overall performance: '.$overall;
         return ['available' => true, 'current' => $current, 'previous' => $previous, 'metrics' => $metrics, 'points' => $points, 'overall' => $overall];
     }
 
